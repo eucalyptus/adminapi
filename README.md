@@ -1,2 +1,7 @@
 # adminapi
-Cloud Service and System Administrative API 
+
+Eucalyptus Cloud Services and General System Administrative Utilities
+
+See subdirectories for additional information.
+
+
