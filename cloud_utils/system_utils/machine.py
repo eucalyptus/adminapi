@@ -96,7 +96,7 @@ class Machine(object):
                                    'proxy_keypath': proxy_keypath,
                                    'timeout': timeout,
                                    'retry': ssh_retry,
-                                   'debugmethod': self.log.debug,
+                                   'logger': self.log,
                                    'verbose': self.verbose
                                    }
         self.log_threads = {}
@@ -165,24 +165,55 @@ class Machine(object):
         for log_file in self.log_buffers.keys():
             self.save_log(log_file, path)
 
-    def dump_netfail_info(self,ip=None, mac=None, pass1=None, pass2=None, showpass=True,
-                          taillength=50, net_namespace=None):
+    def dump_netfail_info(self, ip=None, mac=None, pass1=None, pass2=None, showpass=True,
+                          taillength=50, net_namespace=None, loglevel='debug'):
         """
-        Debug method to provide potentially helpful info from current machine when debugging connectivity issues.
+        Debug method to provide potentially helpful info from current machine when debugging
+        connectivity issues.
+        :param ip: optional ip for ping check
+        :param mac: at this time will add mac to debug output for future reference
+        :param pass1: password info "TO BE PROVIDED IN OUTPUT" for future debug purposes.
+        :param pass2: password info "TO BE PROVIDED IN OUTPUT" for future debug purposes.
+        :param showpass: boolean to show or character over password to indicate 'if' a password was
+                         provided.
+        :param taillength: length of log messages (dmesg, syslog, etc) to retrieve
+        :param net_namespace: the network namespace to gather info from (optional)
+        :param loglevel: the python logging attribute to use. Loglevel of None or 0 is no logging.
+        :returns string buf containing the dumped network info.
         """
-        self.debug('Attempting to dump network information, args: ip:' + str(ip)
-                   + ' mac:' + str(mac)
-                   + ' pass1:' + self.get_masked_pass(pass1,show=True)
-                   + ' pass2:' + self.get_masked_pass(pass2,show=True))
-        self.ping_cmd(ip,verbose=True, net_namespace=net_namespace,count=1)
-        ns_list = self.sys('ip netns list')
-        if net_namespace in ns_list:
-            self.sys('arp -a', net_namespace=net_namespace)
-            self.sys('ifconfig', net_namespace=net_namespace)
-            self.sys('netstat -rn', net_namespace=net_namespace)
-        self.sys('arp -a')
-        self.sys('dmesg | tail -'+str(taillength))
-        self.sys('cat /var/log/messages | tail -'+str(taillength))
+
+        buf = ('Attempting to dump network information, args: ip:' + str(ip)
+               + ' mac:' + str(mac)
+               + ' pass1:' + self.get_masked_pass(pass1, show=showpass)
+               + ' pass2:' + self.get_masked_pass(pass2, show=showpass))
+        if ip:
+            try:
+                out = self.ping_cmd(ip, verbose=False, net_namespace=net_namespace,count=1)
+                buf += out.get('output', None)
+            except Exception as PE:
+                buf += 'Ping cmd failed, err:"{0}"'.format(PE)
+        if net_namespace:
+            try:
+                ns_list = self.sys('ip netns list')
+                if ns_list:
+                    buf +=  "\n"
+                    buf += "\n".join(str(x) for x in ns_list)
+                if net_namespace in ns_list:
+                    self.sys('arp -a', net_namespace=net_namespace)
+                    self.sys('ifconfig', net_namespace=net_namespace)
+                    self.sys('netstat -rn', net_namespace=net_namespace)
+            except Exception as NE:
+                buf += 'Error fetching netns info, err:"{0}"'.format(NE)
+
+        buf += self.sys('arp -a', listformat=False)
+        buf += self.sys('dmesg | tail -' + str(taillength), listformat=False)
+        buf += self.sys('cat /var/log/messages | tail -' + str(taillength), listformat=False)
+        if loglevel:
+            logger = getattr(self.log, loglevel, None)
+            if logger:
+                logger(buf)
+        return buf
+
 
     def get_masked_pass(self, pwd, firstlast=True, charcount=True, show=False):
         '''
@@ -494,7 +525,10 @@ class Machine(object):
         out = self.ping_cmd(host, verbose=verbose, net_namespace=net_namespace)
         self.debug('Ping attempt to host:'+str(host)+", status code:"+str(out['status']))
         if out['status'] != 0:
-            raise RuntimeError('Ping returned error:'+str(out['status'])+' to host:'+str(host))
+
+            raise RuntimeError('{0}\nPing to host:"{1}" returned status:{2}'
+                               .format(out.get('output', None), host, out.get('status', None)))
+        return out
 
     def ping_cmd(self, host, count=2, pingtimeout=10, commandtimeout=120, listformat=False,
                  verbose=True, net_namespace=None):

@@ -86,6 +86,9 @@ class Midget(object):
     def debug(self, msg):
         self.logger.debug(msg)
 
+    def info(self, msg):
+        self.logger.info(msg)
+
     def _indent_table_buf(self, table, indent=None):
         if indent is None:
             indent = self.default_indent
@@ -115,7 +118,7 @@ class Midget(object):
         return ret_buf
 
     def _errmsg(self, text):
-        self.debug(self._bold(text), 101)
+        self.info(self._bold(text), 101)
 
     def _header(self, text):
         return markup(text=text, markups=[1, 94])
@@ -168,55 +171,71 @@ class Midget(object):
             instance = fetched_ins
         return instance
 
-    def _ping_instance_private_ip_from_euca_internal(self,
-                                                     instance,
-                                                     proxy_machine,
-                                                     net_namespace=None):
-        instance = self._get_instance(instance)
-        try:
-            proxy_machine.machine.ping_check(instance.private_ip_address,
-                                             net_namespace=net_namespace)
-            return True
-        except Exception, PE:
-            self.debug('Ping Exception:{0}'.format(PE))
-            self.debug('Failed to ping instance: {0},  private ip:{1} from internal host: {2}'
-                       .format(instance.id,
-                               instance.private_ip_address,
-                               proxy_machine.hostname))
-        return False
-
     def ping_instance_private_ip_from_euca_internal(self,
                                                     instance,
                                                     proxy_machine=None,
                                                     net_namespace=None,
+                                                    verbose=False,
                                                     ping_timeout=5):
+        """
+        Attempts to ping instance from network namespace on the Machine hosting the underlying
+        midonet gateway (likely the Euca CLC).
+
+        :param instance: boto instance obj or instance id
+        :param proxy_machine: cloud_utils Machine() obj, will default to CLC
+        :param net_namespace: string for network namespace, will default to instance.vpc_id
+        :param verbose: bool to log info
+        :param ping_timeout: time allowed when running ping cmd on proxy
+        :return: ping command's exit status
+        """
         instance = self._get_instance(instance)
         if not proxy_machine:
-            clc_service = self.eucaconnection.clc_machine
-            proxy_machine = copy.copy(clc_service)
+            proxy_machine = self.eucaconnection.clc_machine
         net_namespace = net_namespace or instance.vpc_id
-        try:
-            self._self._ping_instance_private_ip_from_euca_internal(instance=instance,
-                                                                    proxy_machine=proxy_machine,
-                                                                    net_namespace=net_namespace)
-        except WaitForResultException:
-            self.errormsg('Failed to ping instance: {0},  private ip:{1} from internal host: {2}'
-                          .format(instance.id,
-                                  instance.private_ip_address,
-                                  proxy_machine.hostname))
-            self.errormsg('Ping failure. Fetching network debug info from internal host...')
-            proxy_machine.machine.dump_netfail_info(ip=instance.private_ip_address,
-                                                    net_namespace=net_namespace)
-            self.errormsg('Done fetching/logging network debug info from internal euca proxy host'
-                          'used in ping attempt to instance {0}, private ip: {1}, from '
-                          'internal host: {2}'.format(instance.id,
-                                                      instance.private_ip_address,
-                                                      proxy_machine.hostname))
-            raise
-        self.debug('Successfully pinged instance: {0},  private ip:{1} from internal host: {2}'
-                   .format(instance.id,
-                           instance.private_ip_address,
-                           proxy_machine.hostname))
+
+        out = proxy_machine.ping_check(instance.private_ip_address,
+                                     net_namespace=net_namespace,
+                                     verbose=verbose)
+        status = out.get('status', None)
+        if status == 0:
+            statusmsg = 'Success(0)'
+        else:
+            statusmsg = 'Failed({0})'.format(status)
+        self.info('\nCmd:"{0}", output:\n{1}\n{2} pinging instance: {3},  private ip:{4} '
+                  'from internal host: {5}'.format(out.get('cmd', None), out.get('output', None),
+                                           statusmsg, instance.id, instance.private_ip_address,
+                                           proxy_machine.hostname))
+        return status
+
+    def dump_euca_gateway_info_for_instance(self, instance, proxy_machine=None,
+                                            net_namespace=None, loglevel='debug'):
+        """
+        Debug method to provide potentially helpful info from current machine when debugging
+        connectivity issues.
+        :param instance: A boto instance obj, or instance id to gather info for.
+        :param net_namespace: the network namespace to gather info from. Will attempt to derive
+                              from the instance if not provided.
+        :param proxy_machine: Machine to grab info from. Likely the midonet gw for this instance.
+        :param loglevel: the python logging attribute to use. Loglevel of None or 0 is no logging.
+        :return string buf containing the dumped network info.
+        """
+        instance = self._get_instance(instance)
+        if not proxy_machine:
+            proxy_machine = self.eucaconnection.clc_machine
+        net_namespace = net_namespace or instance.vpc_id
+        buf = ('Dumping info for instance: "{0}",  private ip:"{1}" from Mido machine: "{2}"'
+               .format(instance.id, instance.private_ip_address, proxy_machine.hostname))
+        buf += ('Fetching network debug info from internal host...')
+        buf += proxy_machine.dump_netfail_info(ip=instance.private_ip_address,
+                                               net_namespace=net_namespace, loglevel=None)
+        buf += ('Done fetching/logging network debug info from internal euca proxy host'
+                'for instance {0}, private ip: {1}, from internal host: {2}'
+                .format(instance.id, instance.private_ip_address, proxy_machine.hostname))
+        if loglevel:
+            logger = getattr(self.log, loglevel, None)
+            if logger:
+                logger(buf)
+        return buf
 
     def get_all_routers(self, search_dict={}, eval_op=re.search, query=None):
         """
@@ -231,7 +250,7 @@ class Midget(object):
                         if eval_op(str(search_dict[key]), router.dto.get(key)):
                             continue
                     except:
-                        self.debug('Error while evaluating -> {0}("{1}","{2}")'
+                        self.info('Error while evaluating -> {0}("{1}","{2}")'
                                    .format("{0}.{1}".format(getattr(eval_op, "__module__", ""),
                                                             getattr(eval_op, "__name__", "")),
                                            str(search_dict[key]),
@@ -245,19 +264,19 @@ class Midget(object):
 
     def get_router_for_instance(self, instance):
         instance = self._get_instance(instance)
-        self.debug('Getting router for instance:{0}, vpc:{1}'.format(instance.id, instance.vpc_id))
+        self.info('Getting router for instance:{0}, vpc:{1}'.format(instance.id, instance.vpc_id))
         routers = self.get_all_routers(search_dict={'name': instance.vpc_id})
         if len(routers) != 1:
             raise ValueError('Expected to find 1 matching router for instance:{0}, found:{1}'
                              .format(instance.id, routers))
         router = routers[0]
-        self.debug('Found router:{0} for instance:{1}'.format(router.get_name(), instance.id))
+        self.info('Found router:{0} for instance:{1}'.format(router.get_name(), instance.id))
         return router
 
     def get_router_by_name(self, name):
         assert name
         search_string = "^{0}$".format(name)
-        self.debug('search string:{0}'.format(search_string))
+        self.info('Using Search String:{0}'.format(search_string))
         routers = self.get_all_routers(search_dict={'name': search_string}, eval_op=re.match)
         if routers:
             return routers[0]
@@ -283,7 +302,7 @@ class Midget(object):
                 row.extend([router.get_inbound_filter_id(), router.get_outbound_filter_id()])
             pt.add_row(row)
         if printme:
-            self.debug('\n{0}\n'.format(pt))
+            self.info('\n{0}\n'.format(pt))
         else:
             return pt
 
@@ -304,23 +323,41 @@ class Midget(object):
                         route.get_weight(),
                         route.get_id()])
         if printme:
-            self.debug('\n{0}\n'.format(pt))
+            self.info('\n{0}\n'.format(pt))
         else:
             return pt
 
-    def show_routers(self, routers=None, printme=True):
+    def show_routers(self, routers=None, loglevel='info'):
         '''
         Show a list of routers, or by default all routers in the current session context
+        :param loglevel: local logger method to use to print the router info, or None
+        :param routers: either a string 'name of router' or list of router objects.
+        :return if loglevel is None, the buffer contain router info is returned. Else
+                the table is printed with the local logger's method 'loglevel'.
         '''
+        if loglevel:
+            assert isinstance(loglevel, basestring), "loglevel must be type string or None"
+            loglevel = str(loglevel).lower()
+        printmethod = getattr(self.logger, loglevel, None)
         buf = ""
         if routers is None:
             routers = self.get_all_routers()
+        elif isinstance(routers, basestring):
+            router = self.get_router_by_name(routers)
+            if not router:
+                raise ValueError('Router by name:"{0}" not found'.format(routers))
+            routers = [router]
         if not isinstance(routers, list):
             routers = [routers]
         for router in routers:
-            buf += "\n" + str(self.show_router_summary(router, showchains=False, printme=False)) \
-                   + "\n"
-        self.debug(buf)
+            if router:
+                buf = "\n{0}\n".format(self.show_router_summary(router,
+                                                                showchains=False,
+                                                                printme=False))
+        if printmethod:
+            printmethod(buf)
+        else:
+            return buf
 
     def show_router_summary(self, router, showchains=True, indent=None, printme=True):
         """
@@ -328,10 +365,16 @@ class Midget(object):
         """
         if indent is None:
             indent = self.default_indent
+        if isinstance(router, basestring):
+            r = self.get_router_by_name(router)
+            if not r:
+                raise ValueError('Router by name:"{0}" not found'.format(router))
+            router = r
         title = self._header("ROUTER:{0}".format(router.get_name()))
         pt = PrettyTable([title])
         pt.align[title] = 'l'
         pt.padding_width = 0
+
         buf = self._bold("{0}ROUTER SUMMARY:\n".format(indent), 4)
         buf += self._indent_table_buf(self.show_routers_brief(routers=[router], printme=False))
         buf += self._bold("{0}ROUTES:\n".format(indent), 4)
@@ -353,7 +396,7 @@ class Midget(object):
                 buf += self._indent_table_buf(self.show_chain(chain=out_filter, printme=False))
         pt.add_row([buf])
         if printme:
-            self.debug('\n{0}\n'.format(pt))
+            self.info('\n{0}\n'.format(pt))
         else:
             return pt
 
@@ -395,7 +438,7 @@ class Midget(object):
         bridge = self.get_device_by_peer_id(port.get_peer_id())
         if not isinstance(bridge, Bridge):
             raise ValueError('peer device for instance router is not a bridge, '
-                             'fix the cloudview assumptions made in this method!')
+                             'fix the assumptions made in this method!')
         return bridge
 
     def show_port_summary(self, port, showchains=True, showbgp=True, indent=None, printme=True):
@@ -419,7 +462,7 @@ class Midget(object):
                     bgps = 0
         except Exception, E:
             bgps = 'ERROR'
-            self.debug('Error fetching bgps from port:{0}, err"{1}'.format(port.get_id(), E))
+            self.info('Error fetching bgps from port:{0}, err"{1}'.format(port.get_id(), E))
 
         pt.add_row([port.get_id(),
                     bgps,
@@ -446,7 +489,7 @@ class Midget(object):
                 buf += self._indent_table_buf(self.show_chain(chain=out_filter, printme=False))
         titlept.add_row([buf])
         if printme:
-            self.debug('\n{0}\n'.format(titlept))
+            self.info('\n{0}\n'.format(titlept))
         else:
             return titlept
 
@@ -474,7 +517,7 @@ class Midget(object):
                         bgps = 0
             except Exception, E:
                 bgps = 'ERROR'
-                self.debug('Error fetching bgps from port:{0}, err"{1}'.format(port.get_id(), E))
+                self.info('Error fetching bgps from port:{0}, err"{1}'.format(port.get_id(), E))
 
             pt.add_row([port.get_id(),
                         bgps,
@@ -500,12 +543,17 @@ class Midget(object):
         if pt:
             buf += str(pt)
         if printme:
-            self.debug('\n{0}\n'.format(pt))
+            self.info('\n{0}\n'.format(pt))
         else:
             return buf
 
     def show_bgps(self, bgps, printme=True):
         buf = ""
+        mainpt = PrettyTable(['BGP INFO'])
+        mainpt.header = False
+        mainpt.align = 'l'
+        mainpt.vrules = 0
+        mainpt.hrules = 0
         if not isinstance(bgps, list):
             bgps = [bgps]
         port = None
@@ -514,7 +562,8 @@ class Midget(object):
             if bgp.dto.get('portId') != port:
                 port = bgp.dto.get('portId')
                 if pt is not None:
-                    buf += str(pt)
+                    mainpt.add_row([str(pt)])
+                    mainpt.add_row(["BGP Status:{0}".format(bgp.dto.get('status', None))])
                 port_header = 'BGP INFO FOR PORT:'.format(port)
                 pt = PrettyTable([port_header, 'BGP ID', 'PEER ADDR',
                                   'LOCAL AS', 'PEER AS', 'AD ROUTES'])
@@ -526,11 +575,12 @@ class Midget(object):
                         bgp.get_local_as(),
                         bgp.get_peer_as(),
                         self._format_ad_routes(bgp.get_ad_routes())])
-        buf += str(pt)
+        mainpt.add_row([str(pt)])
+        mainpt.add_row(["| BGP Status:{0}".format(bgp.dto.get('status', None))])
         if printme:
-            self.debug('\n{0}\n'.format(buf))
+            self.info('\n{0}\n'.format(mainpt))
         else:
-            return buf
+            return mainpt
 
     def _format_ad_routes(self, ad_routes):
         adrs = []
@@ -612,7 +662,7 @@ class Midget(object):
             box.add_row([buf])
             printbuf += str(box) + "\n"
         if printme:
-            self.debug('\n{0}\n'.format(printbuf))
+            self.info('\n{0}\n'.format(printbuf))
         else:
             return printbuf
 
@@ -625,7 +675,7 @@ class Midget(object):
                         ",".join(str(dns) for dns in subnet.get_dns_server_addrs()),
                         subnet.dto.get('enabled')])
         if printme:
-            self.debug('\n{0}\n'.format(pt))
+            self.info('\n{0}\n'.format(pt))
         else:
             return pt
 
@@ -651,7 +701,7 @@ class Midget(object):
             pt.add_row([entry.get_bridge_id(), entry.get_macaddr(), entry.get_port_id(),
                         entry.get_vlan_id()])
         if printme:
-            self.debug('\n{0}\n'.format(pt))
+            self.info('\n{0}\n'.format(pt))
         else:
             return pt
 
@@ -678,7 +728,7 @@ class Midget(object):
             pt.add_row([entry_ip, entry.get_mac(), entry.get_macaddr(), instance_id,
                         vm_host, port])
         if printme:
-            self.debug('\n{0}\n'.format(pt))
+            self.info('\n{0}\n'.format(pt))
         else:
             return pt
 
@@ -697,7 +747,7 @@ class Midget(object):
                 if m_entry.get_macaddr() == arp_entry.get_mac():
                     portid = m_entry.get_port_id()
                     return self.mapi.get_port(portid)
-            self.debug('ARP entry for instance found, but mac has not been learned on a port yet, '
+            self.info('ARP entry for instance found, but mac has not been learned on a port yet, '
                        'try pinging it?   ')
         return None
 
@@ -731,7 +781,7 @@ class Midget(object):
             buf += str(self.show_port_summary(port, showchains=showchains, printme=False))
         pt.add_row([buf])
         if printme:
-            self.debug('\n{0}\n'.format(pt))
+            self.info('\n{0}\n'.format(pt))
         else:
             return pt
 
@@ -772,14 +822,14 @@ class Midget(object):
             rulesbuf = str(self.show_rules(rules=chain.get_rules(), jump=True, printme=False))
             pt.add_row([rulesbuf])
         if printme:
-            self.debug('\n{0}\n'.format(pt))
+            self.info('\n{0}\n'.format(pt))
         else:
             return pt
 
     def show_chains_for_instance_security_groups(self, instance, printme=True):
         instance = self._get_instance(instance)
         if not instance.groups:
-            self.debug('Instance.groups is empty')
+            self.info('Instance.groups is empty')
         mainbuf = self._bold("\nSECURITY GROUP/MIDO CHAIN RULE MAPPING for INSTANCE: '{0}'"
                              .format(instance.id))
         for group in instance.groups:
@@ -793,7 +843,7 @@ class Midget(object):
             pt.add_row([buf])
             mainbuf += "\n" + str(pt)
         if printme:
-            self.debug(mainbuf)
+            self.info(mainbuf)
         else:
             return mainbuf
 
@@ -850,11 +900,11 @@ class Midget(object):
             if protocol == str(rule_protocol).upper().strip():
                 if port >= start_port and port <= end_port:
                     if rule_cidr == "0.0.0.0/0" or is_address_in_network(src_addr, rule_cidr):
-                        self.debug('Found rule which allows src_addr:"{0}", protocol:"{1}", '
+                        self.info('Found rule which allows src_addr:"{0}", protocol:"{1}", '
                                    'port:"{2}"'.format(src_addr, protocol, port))
                         self.show_rules(rules=[rule])
                         return True
-        self.debug('Chain does not allow: src_addr:"{0}", protocol:"{1}", port:"{2}"'
+        self.info('Chain does not allow: src_addr:"{0}", protocol:"{1}", port:"{2}"'
                    .format(src_addr, protocol, port))
         return False
 
@@ -864,7 +914,7 @@ class Midget(object):
         for rule in group.rules:
             if not self.get_security_group_rule_mapping_from_backend(group, rule):
                 unsynced_rules.append(rule)
-        self.debug('{0} unsynced rules out of {1} total rules found for group:"{2}"'
+        self.info('{0} unsynced rules out of {1} total rules found for group:"{2}"'
                    .format(len(unsynced_rules), len(group.rules), group.name))
         if unsynced_rules and show_rules:
             title = markup('The following rules for group:"{0}" were not found) on '
@@ -876,7 +926,7 @@ class Midget(object):
                     pt.add_row([grant.cidr_ip, grant.name, grant.group_id, rule.ip_protocol,
                                 "{0}:{1}".format(rule.from_port, rule.to_port)])
             main_pt.add_row([str(pt)])
-            self.debug("\n" + str(main_pt) + "\n")
+            self.info("\n" + str(main_pt) + "\n")
         return unsynced_rules
 
     def get_unsynced_rules_for_instance(self, instance, show_rules=True):
@@ -885,7 +935,7 @@ class Midget(object):
             group = self.get_security_group(id=group.id)
             unsynced_rules.extend(self.get_unsynced_rules_for_security_group(
                 group, show_rules=show_rules))
-        self.debug('Number of unsynced rules found for instance ({0}):{1}'
+        self.info('Number of unsynced rules found for instance ({0}):{1}'
                    .format(instance.id, len(unsynced_rules)))
         return unsynced_rules
 
@@ -912,7 +962,7 @@ class Midget(object):
         if to_port == -1:
             to_port = None
         for grant in security_group_rule.grants:
-            self.debug(self._bold('Looking for chain rule against grant: cidr_ip:"{0}", '
+            self.info(self._bold('Looking for chain rule against grant: cidr_ip:"{0}", '
                                   'srg_grp:"{1}", proto:"{2}", start_port:"{3}", end_port:"{4}"'
                                   .format(grant.cidr_ip, grant.group_id,
                                           security_group_rule.ip_protocol,
@@ -924,38 +974,38 @@ class Midget(object):
                 r_protocol = None
                 if protocol_number is not None:
                     r_protocol = str(self._get_protocol_name_by_number(protocol_number)).upper()
-                self.debug('checking protocol:"{0}" vs rule_proto:"{1}"'.format(protocol,
+                self.info('checking protocol:"{0}" vs rule_proto:"{1}"'.format(protocol,
                                                                                 r_protocol))
                 if not (protocol == r_protocol):
                     continue
                 port_dict = rule.get_tp_dst() or {}
                 start_port = port_dict.get('start')
                 end_port = port_dict.get('end')
-                self.debug('Protocol matched, checking fport:{0} vs sport:{1}, and tport:{2}'
+                self.info('Protocol matched, checking fport:{0} vs sport:{1}, and tport:{2}'
                            ' vs eport:{3}'.format(from_port, start_port, to_port, end_port))
                 if not (from_port == start_port and to_port == end_port):
                     continue
-                self.debug('Rules port and protocols match up, now ip/src grp comparison...')
+                self.info('Rules port and protocols match up, now ip/src grp comparison...')
                 src_ip = str(rule.get_nw_src_address() or '0.0.0.0')
                 src_mask = str(rule.get_nw_src_length() or 0)
                 rule_cidr = src_ip + "/" + src_mask
                 ip_addr_grp_id = rule.get_ip_addr_group_src()
                 ip_addr_grp_name = ""
-                self.debug('This rule has ipaddr group:"{0}"'.format(ip_addr_grp_id))
+                self.info('This rule has ipaddr group:"{0}"'.format(ip_addr_grp_id))
                 if ip_addr_grp_id:
                     ip_addr_grp = self.mapi.get_ip_addr_group(ip_addr_grp_id)
                     if ip_addr_grp:
                         ip_addr_grp_name = str(ip_addr_grp.get_name())
-                        self.debug('This rule has ipaddr group name:"{0}"'
+                        self.info('This rule has ipaddr group name:"{0}"'
                                    .format(ip_addr_grp_name))
-                self.debug('checking grant.cidr_ip:"{0}" vs rule_cidr:"{1}"'
+                self.info('checking grant.cidr_ip:"{0}" vs rule_cidr:"{1}"'
                            .format(grant.cidr_ip, rule_cidr))
                 if grant.cidr_ip and (str(grant.cidr_ip) == rule_cidr):
                     match = True
                 elif grant.group_id and str(grant.group_id) in ip_addr_grp_name:
                     match = True
                 if match:
-                    self.debug('Found rule for cidr_ip:"{0}", srg_grp:"{1}", proto:"{2}", '
+                    self.info('Found rule for cidr_ip:"{0}", srg_grp:"{1}", proto:"{2}", '
                                'start_port:"{3}", end_port:"{4}"'
                                .format(grant.cidr_ip, grant.group_id, protocol,
                                        from_port, to_port))
@@ -964,7 +1014,7 @@ class Midget(object):
                     if grant in ip_grants:
                         ip_grants.remove(grant)
                         break
-        self.debug('Found "{0}" rules for; Group:"{1}", ip_grants:"{2}", proto:"{3}", '
+        self.info('Found "{0}" rules for; Group:"{1}", ip_grants:"{2}", proto:"{3}", '
                    'start_port:"{4}", end_port:"{5}"'
                    .format(len(ret_rules), group, security_group_rule.grants, protocol,
                            from_port, to_port))
@@ -975,7 +1025,7 @@ class Midget(object):
     def do_instance_rules_allow(self, instance, src_addr, protocol, port):
         for group in instance.groups:
             chain = self.get_chain_for_security_group(group)
-            self.debug('Checking midonet chain:"{0}" for instance:"{1}", security group "{2}"'
+            self.info('Checking midonet chain:"{0}" for instance:"{1}", security group "{2}"'
                        .format(chain.get_name(), instance.id, group.name))
             if self.does_chain_allow(chain=chain, src_addr=src_addr, protocol=protocol, port=port):
                 return True
@@ -1057,7 +1107,7 @@ class Midget(object):
                 buf += self._link_table_buf(self.show_chain(jump_chain, printme=False))
         buf += str(pt)
         if printme:
-            self.debug('\n{0}\n'.format(buf))
+            self.info('\n{0}\n'.format(buf))
         else:
             return buf
 
@@ -1067,7 +1117,7 @@ class Midget(object):
                                          printme=False),
             instance=instance)
         if printme:
-            self.debug('\n{0}\n'.format(ret_buf))
+            self.info('\n{0}\n'.format(ret_buf))
             return None
         else:
             return ret_buf
@@ -1079,18 +1129,19 @@ class Midget(object):
                                   printme=False),
             instance=instance)
         if printme:
-            self.debug('\n{0}\n'.format(ret_buf))
+            self.info('\n{0}\n'.format(ret_buf))
             return None
         else:
             return ret_buf
 
     def show_instance_network_summary(self, instance, printme=True):
         instance = self._get_instance(instance)
-        self.debug('Gathering network info... (this may take a few seconds)')
+        self.info('Gathering network info... (this may take a few seconds)')
         title = ("NETWORK SUMMARY FOR INSTANCE:{0}, (PRIVIP:{1}, PUBIP:{2})"
                  .format(instance.id, instance.private_ip_address, instance.ip_address))
         pt = PrettyTable([title])
         pt.align[title] = 'l'
+        pt.border = 0
         buf = str(self.show_router_for_instance(instance=instance, printme=False))
         buf += str(self.show_bridge_for_instance(instance=instance, printme=False))
         buf += str(self.show_bridge_port_for_instance(instance=instance, printme=False))
@@ -1105,7 +1156,7 @@ class Midget(object):
         buf += str(ept)
         pt.add_row([buf])
         if printme:
-            self.debug('\n{0}\n'.format(pt))
+            self.info('\n{0}\n'.format(pt))
         else:
             return pt
 
@@ -1129,7 +1180,7 @@ class Midget(object):
                 addrs.append(str(" - {0}".format(addr)).ljust(self._ADDR_SPACING))
         ret_buf = " ".join(addrs)
         if printme:
-            self.debug('\n{0}\n'.format(ret_buf))
+            self.info('\n{0}\n'.format(ret_buf))
         else:
             return ret_buf
 
@@ -1149,7 +1200,7 @@ class Midget(object):
                 pass
             pt.add_row([host.get_id(), host.get_name(), host.dto.get('alive'), ip_addrs])
         if printme:
-            self.debug('\n{0}\n'.format(pt))
+            self.info('\n{0}\n'.format(pt))
         else:
             return pt
 
@@ -1174,7 +1225,7 @@ class Midget(object):
             pt.add_row([hostbuf])
             buf += "\n" + str(pt) + "\n"
         if printme:
-            self.debug('{0}'.format(buf))
+            self.info('{0}'.format(buf))
         else:
             return buf
 
@@ -1197,20 +1248,22 @@ class Midget(object):
             hosts = [hosts]
         if hosts is None:
             hosts = self.mapi.get_hosts(query=None) or []
-        self.debug('Attetmpting to stop all hosts first...')
-        self.debug('Restarting hosts: {0}'.format(",".join(str(x.get_name()) for x in hosts)))
+        self.info('Attetmpting to stop all hosts first...')
+        self.info('Restarting hosts: {0}'.format(",".join(str(x.get_name()) for x in hosts)))
         for status in ['stop', 'start']:
             for host in hosts:
                 ip = self.get_ip_for_host(host)
-                username = self.clc_connect_kwargs.get('username', 'root')
-                password = self.clc_connect_kwargs.get('password')
-                keypath = self.clc_connect_kwargs.get('keypath')
-                ssh = SshConnection(host=ip, username=username,
-                                    password=password, keypath=keypath)
-                self.debug("Attempting to {0} host:{1} ({2})".format(status, host.get_name(), ip))
+                euca_host = self.eucaconnection.get_host_by_hostname(ip)
+                # username = self.clc_connect_kwargs.get('username', 'root')
+                # password = self.clc_connect_kwargs.get('password')
+                # keypath = self.clc_connect_kwargs.get('keypath')
+                # ssh = SshConnection(host=ip, username=username,
+                #                     password=password, keypath=keypath)
+                ssh = euca_host.ssh
+                self.info("Attempting to {0} host:{1} ({2})".format(status, host.get_name(), ip))
                 ssh.sys('service midolman {0}'.format(status), code=0)
                 time.sleep(1)
-        self.debug('Done restarting midolman on hosts')
+        self.info('Done restarting midolman on hosts')
 
     def show_host_ports(self, host, printme=True):
         '''
@@ -1224,7 +1277,7 @@ class Midget(object):
             assert isinstance(port, HostInterfacePort)
             porttable.add_row([port.get_interface_name(), port.get_port_id()])
         if printme:
-            self.debug('\n{0}\n'.format(porttable))
+            self.info('\n{0}\n'.format(porttable))
         else:
             return porttable
 
@@ -1243,7 +1296,7 @@ class Midget(object):
             pt.add_row([hi.get_name(), hi.get_type(), hi.get_mac(), hi.get_status(), hi.get_mtu(),
                         hi.get_endpoint(), ", ".join(hi.get_addresses() or [])])
         if printme:
-            self.debug('\n{0}\n'.format(pt))
+            self.info('\n{0}\n'.format(pt))
         else:
             return pt
 
@@ -1269,7 +1322,7 @@ class Midget(object):
         returns the host object if found
         """
         name, aliaslist, addresslist = socket.gethostbyaddr(name)
-        self.debug('looking up host with name:{0}'.format(name))
+        self.info('looking up host with name:{0}'.format(name))
         for host in self.mapi.get_hosts():
             if host.get_name() == name:
                 return host
@@ -1281,8 +1334,8 @@ class Midget(object):
         port = self.get_bridge_port_for_instance_learned(instance)
         if not port:
             try:
-                self.debug(self._bold("MAC IS NOT LEARNED ON A BRIDGE PORT AT THIS TIME !?!", 91))
-                self.debug(self._bold("Trying to ping the instance private addr('{0}') now...?)"
+                self.info(self._bold("MAC IS NOT LEARNED ON A BRIDGE PORT AT THIS TIME !?!", 91))
+                self.info(self._bold("Trying to ping the instance private addr('{0}') now...?)"
                                       .format(instance.private_ip_address), 91))
                 self.ping_instance_private_ip_from_euca_internal(instance)
             except WaitForResultException:
@@ -1314,16 +1367,16 @@ class Midget(object):
         for group in groups:
             if not id or (id and group.id == id):
                 if not name or (name and group.name == name):
-                    self.debug('Found matching security group for name:'+str(name)+' and id:'+str(id))
+                    self.info('Found matching security group for name:'+str(name)+' and id:'+str(id))
                     return group
-        self.debug('No matching security group found for name:'+str(name)+' and id:'+str(id))
+        self.info('No matching security group found for name:'+str(name)+' and id:'+str(id))
         return None
 
     def show_security_group(self, group, printme=True):
         try:
             from prettytable import PrettyTable, ALL
         except ImportError as IE:
-            self.debug('No pretty table import failed:' + str(IE))
+            self.info('No pretty table import failed:' + str(IE))
             return
         group = self.get_security_group(id=group.id)
         if not group:
@@ -1348,7 +1401,7 @@ class Midget(object):
         table.hrules = ALL
         maintable.add_row([str(table)])
         if printme:
-            self.debug("\n{0}".format(str(maintable)))
+            self.info("\n{0}".format(str(maintable)))
         else:
             return maintable
 

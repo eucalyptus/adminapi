@@ -221,7 +221,7 @@ class SshConnection():
                  enable_ipv6_dns=False,
                  timeout=60,
                  retry=1,
-                 debugmethod=None,
+                 logger=None,
                  verbose=False,
                  debug_connect=False):
         """
@@ -244,7 +244,7 @@ class SshConnection():
         :param timeout: - optional - integer, tcp timeout in seconds
         :param retry: - optional - integer, # of attempts made to establish ssh session without
                         auth failures
-        :param debugmethod: - method, used to handle debug msgs
+        :param logger: - method, used to handle debug msgs
         :param verbose: - optional - boolean to flag debug output on or off mainly for
                         cmd execution
         :param debug_connect: - optional - boolean to flag debug output on or off for connection
@@ -264,7 +264,7 @@ class SshConnection():
         self.enable_ipv6_dns = enable_ipv6_dns
         self.timeout = timeout
         self.retry = retry
-        self.debugmethod = debugmethod
+        self.log = logger
         self.verbose = verbose
         self.sftp = None
         self.key_files = key_files or []
@@ -383,10 +383,10 @@ class SshConnection():
         if verbose is None:
             verbose = self.verbose
         if verbose is True:
-            if self.debugmethod is None:
+            if self.log is None:
                 print (str(msg))
             else:
-                self.debugmethod(msg)
+                self.log.debug(msg)
 
     def ssh_sys_timeout(self, chan, start, cmd):
         """
@@ -419,7 +419,8 @@ class SshConnection():
                        enable_debug=enable_debug)
         output = out['output']
         if code is not None and out['status'] != code:
-            self.debug(output)
+            if verbose:
+                self.debug(output)
             raise CommandExitCodeException('Cmd:' + str(cmd) + ' failed with status code:' +
                                            str(out['status']) + ", output:" + str(output))
         return output
@@ -468,8 +469,8 @@ class SshConnection():
                     instead of cbargs
         :param cbargs: - optional - list of arguments to be appended to output buffer and
                          passed to cb
-        :param enable_debug: - optional - boolean, if set will use self.debug() to print additional
-                               messages during cmd()
+        :param enable_debug: - optional - boolean, if set will use self.debug() to print
+                               additional messages during cmd()
         """
         if verbose is None:
             verbose = self.verbose
@@ -501,7 +502,8 @@ class SshConnection():
                     chan.get_pty()
                 chan.setblocking(0)
                 if invoke_shell:
-                    self.debug('Invoking shell...')
+                    if verbose:
+                        self.debug('Invoking shell...')
                     chan.invoke_shell()
                     time.sleep(shell_delay)
                     cmd = cmd.rstrip() + shell_return

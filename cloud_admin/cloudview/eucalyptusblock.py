@@ -13,6 +13,7 @@
 import json
 import re
 import sys
+import threading
 from cloud_admin.cloudview import ConfigBlock
 from cloud_admin.cloudview import Namespace
 from cloud_admin.services import EucaNotFoundException
@@ -45,30 +46,41 @@ def get_values_from_hosts(hostdict, host_method_name=None, host_attr_chain=[],
         else:
             print msg
     lookup = host_method_name or ".".join(host_attr_chain)
+    hostlock = threading.Lock()
+    threads = []
 
-    for ip, host in hostdict.iteritems():
+    def get_val_from_host(ip, host, lookup=lookup):
         # Traverse attrs to retrieve the end value...
         if host_attr_chain:
             obj = host
-            for attr in host_attr_chain:
-                try:
-                    obj = getattr(obj, attr)
-                except AttributeError as AE:
-                    obj = None
-                    errmsg = markup('{0}:{1}'.format(host, str(AE)), [1, 31])
-                    debug(errmsg, host, err=True)
-            value = obj
+            with hostlock:
+                for attr in host_attr_chain:
+                    try:
+                        obj = getattr(obj, attr)
+                    except AttributeError as AE:
+                        obj = None
+                        errmsg = markup('{0}:{1}'.format(host, str(AE)), [1, 31])
+                        debug(errmsg, host, err=True)
+                value = obj
         # Use the host method...
         elif host_method_name:
             method = getattr(host, host_method_name, None)
             if method:
                 value = method(**host_method_kwargs)
-        debug(markup('Got value for host: "{0}.{1}" = "{2}"'
-                     .format(ip, lookup, value), [1, 94]), host)
-        if value_dict.get(value) is not None:
-            value_dict[value].append(ip)
-        else:
-            value_dict[value] = [ip]
+        with hostlock:
+            debug(markup('Got value for host: "{0}.{1}" = "{2}"'
+                         .format(ip, lookup, value), [1, 94]), host)
+            if value_dict.get(value) is not None:
+                value_dict[value].append(ip)
+            else:
+                value_dict[value] = [ip]
+
+    for ip, host in hostdict.iteritems():
+        t = threading.Thread(target=get_val_from_host, args=(ip, host))
+        t.start()
+        threads.append(t)
+    for t in threads:
+        t.join()
     # If we have more than one key entry in a dict, then one of the hosts
     # had a different value.
     # In this case produce a dict for the final value. This will at least show which hosts

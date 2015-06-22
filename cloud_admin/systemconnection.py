@@ -3,6 +3,7 @@ import copy
 import logging
 from prettytable import PrettyTable
 import re
+import threading
 from cloud_admin.access.autocreds import AutoCreds
 from cloud_admin.services.serviceconnection import ServiceConnection
 from cloud_admin.hosts.eucahost import EucaHost
@@ -107,9 +108,22 @@ class SystemConnection(ServiceConnection):
         connect_kwargs = copy.copy(self.clc_connect_kwargs)
         if 'hostname' in connect_kwargs:
             connect_kwargs.pop('hostname')
+        hostlock = threading.Lock()
+
+        def add_host(ip, services, self=self, connect_kwargs=connect_kwargs):
+            host = EucaHost(connection=self, hostname=ip, services=services, **connect_kwargs)
+            with hostlock:
+                self._eucahosts[ip] = host
+        threads = []
         for ip, services in machines.iteritems():
-            self._eucahosts[ip] = EucaHost(connection=self, hostname=ip, services=services,
-                                           **connect_kwargs)
+            t = threading.Thread(target=add_host, args=(ip,services))
+            t.start()
+            threads.append(t)
+            # self._eucahosts[ip] = EucaHost(connection=self, hostname=ip, services=services,
+            #                               **connect_kwargs)
+        for t in threads:
+            t.join()
+
         return self._eucahosts
 
     def get_host_by_hostname(self, hostname):
@@ -175,16 +189,32 @@ class SystemConnection(ServiceConnection):
             walrus = out[0]
         return walrus
 
-    def show_cloud_legacy_summary(self,  print_method=None, print_table=True):
+    def show_cloud_legacy_summary(self, repo_info=False, print_method=None, print_table=True):
+        """
+        Creates a table representing the legacy Eutester/QA reprsentation of a Eucalyptus
+        cloud. This can be used for legacy eutester tests, etc..
+        :param repo_info: bool, if True will use the work REPO in place of Zone for the 5th column
+        :param print_method: method used to print this table, defaults to self.log.info
+        :param print_table: bool, if False will return the table obj
+        :return: table obj if print_table is False
+        """
         ret = ""
         print_method = print_method or self.log.info
-        pt = PrettyTable(['# HOST', 'DISTRO', 'VER', 'ARCH', 'ZONE', 'SERVICE CODES'])
+        if repo_info:
+            rz_col = 'REPO'
+        else:
+            rz_col = 'ZONE'
+        pt = PrettyTable(['# HOST', 'DISTRO', 'VER', 'ARCH', rz_col, 'SERVICE CODES'])
         pt.align = 'l'
         pt.border = 0
         for ip, host in self.eucahosts.iteritems():
             split = host.summary_string.split()
             service_codes = " ".join(split[5:])
-            pt.add_row([split[0], split[1], split[2], split[3], split[4], service_codes])
+            if repo_info:
+                rz_col = 'REPO'
+            else:
+                rz_col = split[4]
+            pt.add_row([split[0], split[1], split[2], split[3], rz_col, service_codes])
             ret += "{0}\n".format(host.summary_string)
         if print_table:
             print_method("\n{0}\n".format(str(pt)))
@@ -252,12 +282,11 @@ class SystemConnection(ServiceConnection):
         header = serv_lines[0]
         ansi_escape = re.compile(r'\x1b[^m]*m')
         # Now build the machine table...
-        for hostip, host in eucahosts.iteritems():
+        threads = []
+        hostlock = threading.Lock()
+        # Method to allow host info to be gathered concurrently
+        def add_host(hostip, host, self=self):
             assert isinstance(host, EucaHost)
-            pt.add_row([markup("HOST:") + markup(hostip, [1, 94]),
-                        markup('EUCALYPTUS SERVICES:') + markup('[ {0} ]'
-                               .format(" ".join(str(x) for x in host.euca_service_codes)),
-                               [1, 34])])
             servbuf = header + "\n"
             mservices = []
             # Get the child services (ie for UFS)
@@ -309,7 +338,19 @@ class SystemConnection(ServiceConnection):
             host_info += str(host.hostname).ljust(machine_hdr[1])
             sys_pt = host.show_sys_info(print_table=False)
             host_info += "{0}".format(sys_pt)
-            pt.add_row([host_info, servbuf])
+            with hostlock:
+                pt.add_row([markup("HOST:") + markup(hostip, [1, 94]),
+                            markup('EUCALYPTUS SERVICES:') + markup('[ {0} ]'
+                                   .format(" ".join(str(x) for x in host.euca_service_codes)),
+                                   [1, 34])])
+                pt.add_row([host_info, servbuf])
+
+        for hostip, host in eucahosts.iteritems():
+            t = threading.Thread(target=add_host, args=(hostip, host))
+            t.start()
+            threads.append(t)
+        for t in threads:
+            t.join()
         if print_table:
             #print_method("\n{0}\n".format(pt.get_string(sortby=pt.field_names[1])))
             print_method("\n{0}\n".format(pt.get_string()))
