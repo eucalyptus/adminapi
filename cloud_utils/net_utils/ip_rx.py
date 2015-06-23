@@ -83,8 +83,6 @@ Examples:
 }
 
 '''
-import copy
-import select
 import socket
 import sys
 import json
@@ -165,21 +163,36 @@ DSTADDRS = {}
 if options.dstaddrs:
     for addr in options.dstaddrs.split(','):
         DSTADDRS[str(addr).strip()] = {}
-results = {'packets': {}, 'elapsed': None, 'count': None, 'name': options.testname}
+results = {'packets': {}, 'protocol': PROTO, 'elapsed': None, 'count': None,
+           'name': options.testname}
 sock = None
 file = None
+line = "--------------------------------------------------------------------------------"
 
 def debug(msg, level=DEBUG):
+    """
+    Write debug info to stdout filtering on the set verbosity level and prefixing each line
+    with a '#' to allow for easy parsing of results from output.
+    :param msg: string to print
+    :param level: verbosity level of this message
+    :return: None
+    """
     if not VERBOSE:
         return
     if VERBOSE >= level:
         for line in str(msg).splitlines():
             print "# {0}".format(str(line))
 
-
+##################################################################################################
+#                                           IP HEADER
+##################################################################################################
 
 class IPHdr(object):
     def __init__(self, packet):
+        """
+        Simple class used to parse and represent an IP header.
+        :param packet: Packet should be raw bytes read from socket, etc..
+        """
         self.version = None
         self.header_len = None
         self.ttl = None
@@ -189,6 +202,10 @@ class IPHdr(object):
         self.parse_ip_hdr(packet)
 
     def parse_ip_hdr(self, packet):
+        """
+        Used to parse and populate attributes of the ip header
+        :param packet: Packet should be raw bytes read from socket, etc..
+        """
         ip_header = packet[0:20]
         iph = struct.unpack('!BBHHHBBH4s4s' , ip_header)
         version_ihl = iph[0]
@@ -201,11 +218,20 @@ class IPHdr(object):
         self.dst_addr = socket.inet_ntoa(iph[9]);
 
     def print_me(self, verbose=INFO):
+        """
+        Print this IP header using the debug method
+        :param verbose: verbosity level used to filter whether this gets printed or not
+        """
         debug("IP ver:{0}, HDR LEN:{1}, TTL:{2}, PROTO:{3}, SRC ADDR:{4}, DST ADDR:{5}"
             .format(self.version, self.header_len, self.ttl, self.protocol, self.src_addr,
                     self.dst_addr), level=verbose)
 
-line = "----------------------------------------------------------------------------------"
+
+
+##################################################################################################
+#                       Start main socket listener routine...
+##################################################################################################
+
 start = time.time()
 debug('Opening Socket for Protocol:{0}'.format(PROTO), level=DEBUG)
 
@@ -235,7 +261,12 @@ try:
             except socket.timeout:
                 done = True
                 continue
+            # Parse IP header...
             iphdr = IPHdr(data)
+
+            # Check packet info against the provided filters...
+            if PROTO and PROTO != iphdr.protocol:
+                continue
             if DSTPORTS:
                 srcport, dstport = struct.unpack('!HH',
                                                  data[iphdr.header_len:iphdr.header_len + 4])
@@ -249,6 +280,7 @@ try:
 
             if ((not SRCADDRS or (iphdr.src_addr in SRCADDRS)) and
                     (not DSTADDRS or (iphdr.dst_addr in DSTADDRS))):
+                # Store info in results dict...
                 if iphdr.src_addr not in results['packets']:
                     results['packets'][iphdr.src_addr] = {}
                 if iphdr.dst_addr not in results['packets'][iphdr.src_addr]:
@@ -257,6 +289,8 @@ try:
                     results['packets'][iphdr.src_addr][iphdr.dst_addr][dstport] = 1
                 else:
                     results['packets'][iphdr.src_addr][iphdr.dst_addr][dstport] += 1
+
+                # Print packet and debug info...
                 debug(line, INFO)
                 iphdr.print_me()
                 if DSTPORTS:
@@ -270,12 +304,19 @@ try:
                     debug('From:{0}, Pkt:{1}, Data:{2}'.format(ip, plen, dlen), DEBUG)
                     debug('Info:{0}'.format(info), DEBUG)
                     debug('Data:{0}'.format(data), DEBUG)
+
+                # This packet met the provided filter criteria increment counter
                 pkts += 1
         else:
             done = True
 except KeyboardInterrupt:
     done = True
 finally:
+    try:
+        if sock:
+            sock.close()
+    except Exception as SE:
+        debug('Error while closing socket:"{0}"'.format(SE), INFO)
     elapsed = "%.2f" % (time.time() - start)
     results['count'] = pkts
     results['elapsed'] = float(elapsed)
@@ -286,6 +327,5 @@ finally:
         with open(options.resultsfile, 'a+') as res_file:
             res_file.write(out)
             res_file.flush()
-    if sock:
-        sock.close()
+
 
