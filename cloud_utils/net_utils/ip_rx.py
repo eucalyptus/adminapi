@@ -3,6 +3,12 @@
 #
 # Simple IP packet server/listener test tool
 #
+Results are returned in JSON format containing the following attributes:
+ count = number of packets captured using the filters provided
+ elapsed = time in seconds for this capture
+ name = Name of this capture test, defaults to the current date/time
+ packets = dict of packets in the format: [src addr][dst addr][port] = packet count
+
 Examples:
 # Listen for all sctp(proto 132), filter for dest ports; 101, 102, 103, wait for no more than
 # 20 seconds and no more than 5 packets:
