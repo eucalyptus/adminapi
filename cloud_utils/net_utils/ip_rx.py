@@ -1,8 +1,80 @@
 #!/usr/bin/python
 '''
 #
-# Simple SCTP server/listener
+# Simple IP packet server/listener test tool
 #
+Examples:
+# Listen for all sctp(proto 132), filter for dest ports; 101, 102, 103, wait for no more than
+# 20 seconds and no more than 5 packets:
+
+./ip_rx.py -o 132 -p 101,102,103 -t 20 -c 5
+{
+    "count": 6,
+    "elapsed": 8.9399999999999995,
+    "name": "Mon Jun 22 22:25:41 2015",
+    "packets": {
+        "10.111.5.178": {
+            "10.111.1.110": {
+                "101": 1,
+                "102": 1,
+                "103": 4
+            }
+        }
+    }
+}
+
+
+# Listen for multicast address 228.7.7.3, dstport: 8773, from any of the
+# following hosts; "10.111.1.110, 10.111.5.178", write results to file 'junk.txt',
+# capture for no more than 15 seconds, if port is not specified 'None' or 'null' will be
+# used in the results output instead of a port number:
+
+./ip_rx.py -o 17 -s "10.111.1.110, 10.111.5.178" -n "My test name" -f junk.txt -q -t 15
+{
+    "count": 17,
+    "elapsed": 15.0,
+    "name": "My test name",
+    "packets": {
+        "10.111.1.110": {
+            "228.7.7.3": {
+                "null": 2
+            }
+        },
+        "10.111.5.178": {
+            "10.111.1.110": {
+                "null": 11
+            },
+            "228.7.7.3": {
+                "null": 4
+            }
+        }
+    }
+}
+
+# Same as above but now with a port number...
+
+./ip_rx.py -o 17 -s "10.111.1.110, 10.111.5.178" -n "TEST2" -f junk.txt -q -t 15 -p 8773
+{
+    "count": 14,
+    "elapsed": 15.0,
+    "name": "TEST2",
+    "packets": {
+        "10.111.1.110": {
+            "228.7.7.3": {
+                "8773": 3
+            }
+        },
+        "10.111.5.178": {
+            "10.111.1.110": {
+                "8773": 9
+            },
+            "228.7.7.3": {
+                "8773": 2
+            }
+        }
+    }
+}
+
 '''
 import copy
 import select
