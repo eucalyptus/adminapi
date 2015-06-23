@@ -12,10 +12,11 @@ from optparse import OptionParser, OptionValueError
 
 def get_src(dest):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-    s.connect((dest,1))
+    s.connect((dest, 1))
     source_ip = s.getsockname()[0]
     s.close()
     return source_ip
+
 
 def send_packet(destip, dstport=101, srcport=1000, proto=132, payload=None):
     try:
@@ -26,6 +27,7 @@ def send_packet(destip, dstport=101, srcport=1000, proto=132, payload=None):
         raise
     sctpobj = SCTP(srcport=srcport, dstport=dstport, payload=payload)
     s.sendto(sctpobj.pack(), (destip, dstport))
+
 
 class SCTP(object):
     """
@@ -82,10 +84,11 @@ class ChunkHdr(object):
         packet = chunk + self.chunk_data
         return packet
 
+
 class DataChunk(object):
     def __init__(self, tsn=1, stream_id=12345, stream_seq=54321, payload_proto=0, payload=None):
         if payload is None:
-            payload ="TEST SCTP DATA CHUNK"
+            payload = "TEST SCTP DATA CHUNK"
         self.payload = payload
         self.tsn = tsn
         self.stream_id = stream_id
@@ -103,7 +106,7 @@ class DataChunk(object):
         return packet
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
 
     parser = OptionParser()
     parser.add_option("-s", "--srcport", dest="src", type="int", default=1000,
@@ -114,14 +117,14 @@ if __name__=="__main__":
                       help="Destination ip", metavar="IP")
     parser.add_option("--proto", dest="proto", type="int", default=132,
                       help="Protocol number, default for sctp: 132", metavar="PROTOCOL")
-    parser.add_option("-c", "--chunk", dest="chunk",default=None, help="Chunk payload",
+    parser.add_option("-c", "--chunk", dest="chunk", default=None, help="Chunk payload",
                       metavar="DATA")
 
     options, args = parser.parse_args()
     if not options.destip:
         raise OptionValueError("'-d / --dst' for destination IP/Addr must be provided")
     destip = options.destip
-    proto =options.proto
+    proto = options.proto
     srcport = int(options.src)
     dstport = int(options.dst)
     payload = options.chunk

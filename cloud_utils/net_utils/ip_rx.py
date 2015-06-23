@@ -172,6 +172,7 @@ sock = None
 file = None
 line = "--------------------------------------------------------------------------------"
 
+
 def debug(msg, level=DEBUG):
     """
     Write debug info to stdout filtering on the set verbosity level and prefixing each line
@@ -189,6 +190,7 @@ def debug(msg, level=DEBUG):
 ##################################################################################################
 #                                           IP HEADER
 ##################################################################################################
+
 
 class IPHdr(object):
     def __init__(self, packet):
@@ -209,16 +211,16 @@ class IPHdr(object):
         Used to parse and populate attributes of the ip header
         :param packet: Packet should be raw bytes read from socket, etc..
         """
-        ip_header = packet[0:20]
-        iph = struct.unpack('!BBHHHBBH4s4s' , ip_header)
+        ip_header = packet[0: 20]
+        iph = struct.unpack('!BBHHHBBH4s4s', ip_header)
         version_ihl = iph[0]
         self.version = version_ihl >> 4
         ihl = version_ihl & 0xF
         self.header_len = ihl * 4
         self.ttl = iph[5]
         self.protocol = iph[6]
-        self.src_addr = socket.inet_ntoa(iph[8]);
-        self.dst_addr = socket.inet_ntoa(iph[9]);
+        self.src_addr = socket.inet_ntoa(iph[8])
+        self.dst_addr = socket.inet_ntoa(iph[9])
 
     def print_me(self, verbose=INFO):
         """
@@ -226,9 +228,8 @@ class IPHdr(object):
         :param verbose: verbosity level used to filter whether this gets printed or not
         """
         debug("IP ver:{0}, HDR LEN:{1}, TTL:{2}, PROTO:{3}, SRC ADDR:{4}, DST ADDR:{5}"
-            .format(self.version, self.header_len, self.ttl, self.protocol, self.src_addr,
-                    self.dst_addr), level=verbose)
-
+              .format(self.version, self.header_len, self.ttl, self.protocol, self.src_addr,
+                      self.dst_addr), level=verbose)
 
 
 ##################################################################################################
@@ -330,5 +331,3 @@ finally:
         with open(options.resultsfile, 'a+') as res_file:
             res_file.write(out)
             res_file.flush()
-
-
