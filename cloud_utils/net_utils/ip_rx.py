@@ -11,9 +11,9 @@ Results are returned in JSON format containing the following attributes:
 
 Examples:
 # Listen for all sctp(proto 132), filter for dest ports; 101, 102, 103, wait for no more than
-# 20 seconds and no more than 5 packets:
+# 20 seconds and no more than 5 packets, set verbose level to 0 for quiet:
 
-./ip_rx.py -o 132 -p 101,102,103 -t 20 -c 5
+./ip_rx.py -o 132 -p 101,102,103 -t 20 -c 5 -v0
 {
     "count": 6,
     "elapsed": 8.9399999999999995,
@@ -35,7 +35,7 @@ Examples:
 # capture for no more than 15 seconds, if port is not specified 'None' or 'null' will be
 # used in the results output instead of a port number:
 
-./ip_rx.py -o 17 -s "10.111.1.110, 10.111.5.178" -n "My test name" -f junk.txt -q -t 15
+./ip_rx.py -o 17 -s "10.111.1.110, 10.111.5.178" -n "My test name" -f junk.txt -q -t 15 -v0
 {
     "count": 17,
     "elapsed": 15.0,
@@ -59,7 +59,7 @@ Examples:
 
 # Same as above but now with a port number...
 
-./ip_rx.py -o 17 -s "10.111.1.110, 10.111.5.178" -n "TEST2" -f junk.txt -q -t 15 -p 8773
+./ip_rx.py -o 17 -s "10.111.1.110, 10.111.5.178" -n "TEST2" -f junk.txt -q -t 15 -p 8773 -v0
 {
     "count": 14,
     "elapsed": 15.0,
@@ -90,7 +90,10 @@ import json
 import struct
 import time
 from optparse import OptionParser
-
+TRACE = 3
+DEBUG = 2
+INFO = 1
+QUIET = 0
 
 parser = OptionParser()
 
@@ -127,8 +130,8 @@ parser.add_option("-d", "--dst-addrs", dest="dstaddrs", default="",
 parser.add_option("--bind", dest="bind", action='store_true', default=False,
                   help="Flag to enable port binding, default:false")
 
-parser.add_option("-q", "--quiet", dest="quiet", action='store_true', default=False,
-                  help="Flag to run in quiet mode and show ip info only")
+parser.add_option("-v", "--verbose", dest="verbose", type='int', default=INFO,
+                  help="Verbose level, 0=quiet, 1=info, 2=debug, 3=trace. Default=1")
 
 parser.add_option("-a", "--addr", dest="addr", default='',
                   help="Local addr to bind to, default is '' or 'listen on all'", metavar='HOST')
@@ -141,7 +144,7 @@ HOST = options.addr
 PROTO = options.proto
 BIND = options.bind
 COUNT = options.count
-QUIET = options.quiet
+VERBOSE = options.verbose
 TIMEOUT = options.timeout
 DSTPORTS = {}
 if options.destports:
@@ -165,9 +168,12 @@ results = {'packets': {}, 'elapsed': None, 'count': None, 'name': options.testna
 sock = None
 file = None
 
-def debug(msg):
-    for line in str(msg).splitlines():
-        print "# {0}".format(str(line))
+def debug(msg, level=DEBUG):
+    if not VERBOSE:
+        return
+    if VERBOSE >= level:
+        for line in str(msg).splitlines():
+            print "# {0}".format(str(line))
 
 
 
@@ -193,22 +199,20 @@ class IPHdr(object):
         self.src_addr = socket.inet_ntoa(iph[8]);
         self.dst_addr = socket.inet_ntoa(iph[9]);
 
-    def print_me(self):
+    def print_me(self, verbose=INFO):
         debug("IP ver:{0}, HDR LEN:{1}, TTL:{2}, PROTO:{3}, SRC ADDR:{4}, DST ADDR:{5}"
             .format(self.version, self.header_len, self.ttl, self.protocol, self.src_addr,
-                    self.dst_addr))
+                    self.dst_addr), level=verbose)
 
 line = "----------------------------------------------------------------------------------"
 start = time.time()
-
-if not QUIET:
-    debug('Opening Socket for Protocol:{0}'.format(PROTO))
+debug('Opening Socket for Protocol:{0}'.format(PROTO), level=DEBUG)
 
 try:
     sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, PROTO)
     if BIND:
         bport = DSTPORTS.iterkeys().next()
-        debug("Binding to:'{0}':{1}".format(HOST, bport))
+        debug("Binding to:'{0}':{1}".format(HOST, bport), DEBUG)
         sock.bind((HOST, bport))
     pkts = 0
     done = False
@@ -224,8 +228,9 @@ try:
                 sock.settimeout(time_remaining)
             try:
                 data, (ip, info) = sock.recvfrom(65565)
-                sys.stdout.write('#')
-                sys.stdout.flush()
+                if options.verbose >= TRACE:
+                    sys.stdout.write('#')
+                    sys.stdout.flush()
             except socket.timeout:
                 done = True
                 continue
@@ -251,20 +256,19 @@ try:
                     results['packets'][iphdr.src_addr][iphdr.dst_addr][dstport] = 1
                 else:
                     results['packets'][iphdr.src_addr][iphdr.dst_addr][dstport] += 1
-                debug(line)
+                debug(line, INFO)
                 iphdr.print_me()
                 if DSTPORTS:
-                    debug('Src Port:{0}, Dst Port:{1}'.format(srcport, dstport))
+                    debug('Src Port:{0}, Dst Port:{1}'.format(srcport, dstport), INFO)
                 if not QUIET:
                     dlen = 0
                     plen = len(data)
                     if plen >= iphdr.header_len:
                         data = data[iphdr.header_len:]
                         dlen = len(data)
-                    debug('From:{0}, Pkt:{1}, Data:{2}'.format(ip, plen, dlen))
-                    debug('Info:{0}'.format(info))
-                    debug('Data:{0}'.format(data))
-                debug(line)
+                    debug('From:{0}, Pkt:{1}, Data:{2}'.format(ip, plen, dlen), DEBUG)
+                    debug('Info:{0}'.format(info), DEBUG)
+                    debug('Data:{0}'.format(data), DEBUG)
                 pkts += 1
         else:
             done = True
