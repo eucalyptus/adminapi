@@ -32,30 +32,31 @@ Examples:
 
 # Listen for multicast address 228.7.7.3, dstport: 8773, from any of the
 # following hosts; "10.111.1.110, 10.111.5.178", write results to file 'junk.txt',
-# capture for no more than 15 seconds, if port is not specified 'None' or 'null' will be
+# capture for no more than 15 seconds, if port is not specified 'unknown' will be
 # used in the results output instead of a port number:
 
 ./ip_rx.py -o 17 -s "10.111.1.110, 10.111.5.178" -n "My test name" -f junk.txt -q -t 15 -v0
 {
-    "count": 17,
+    "count": 22,
     "elapsed": 15.0,
     "name": "My test name",
     "packets": {
         "10.111.1.110": {
             "228.7.7.3": {
-                "null": 2
+                "unknown": 5
             }
         },
         "10.111.5.178": {
             "10.111.1.110": {
-                "null": 11
+                "unknown": 13
             },
             "228.7.7.3": {
-                "null": 4
+                "unknown": 4
             }
         }
     }
 }
+
 
 # Same as above but now with a port number...
 
@@ -243,8 +244,8 @@ try:
                 if DSTPORTS and dstport not in DSTPORTS:
                     continue
             else:
-                srcport = None
-                dstport = None
+                srcport = 'unknown'
+                dstport = 'unknown'
 
             if ((not SRCADDRS or (iphdr.src_addr in SRCADDRS)) and
                     (not DSTADDRS or (iphdr.dst_addr in DSTADDRS))):
