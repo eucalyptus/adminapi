@@ -18,6 +18,7 @@ def SHOW_PROPERTIES(connection, properties=None, description=True, defaults=True
     :param defaults: bool, show property defaults in table
     :param print_table: bool, if True will print table using connection.debug_method()
                         if False will return the table object
+    :param search: string, to use as filter for name of properties
     :param nameprefix: property names used to filter query response
     """
     print_method = print_method or connection._show_method

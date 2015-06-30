@@ -86,8 +86,10 @@ Examples:
 }
 
 '''
+from os.path import abspath, basename
 import socket
 import sys
+import traceback
 import json
 import struct
 import time
@@ -96,81 +98,47 @@ TRACE = 3
 DEBUG = 2
 INFO = 1
 QUIET = 0
+VERBOSE_LVL = INFO
 
-parser = OptionParser()
 
-parser.add_option("-n", "--testname", dest="testname", default=str(time.asctime()),
-                  help="Name used to identify test results", metavar='TESTNAME')
+def get_script_path():
+    try:
+        import inspect
+    except ImportError:
+        return None
+    # print os.path.abspath(inspect.stack()[0][1])
+    # print inspect.getfile(inspect.currentframe())
+    # print os.path.realpath(inspect.getfile(inspect.currentframe()))
+    return abspath (inspect.stack()[0][1])
 
-parser.add_option("-p", "--dst-ports", dest="destports", default='',
-                  help="Comma separated list of Destination Ports to filter on, example:8773",
-                  metavar='PORT')
 
-parser.add_option("-r", "--src-ports", dest="srcports", default="",
-                  help="Comma separated list of Source Ports to filter on", metavar='PORT')
+def sftp_file(sshconnection, verbose_level=DEBUG):
+    script_path = get_script_path()
+    script_name = basename(script_path)
+    sshconnection.sftp_put(script_path, script_name)
+    debug('Done Copying script:"{0}" to "{1}"'.format(script_name, sshconnection.host),
+          verbose_level)
+    return script_name
 
-parser.add_option("-o", "--proto", dest="proto", type="int", default=17,
-                  help="Protocol type, examples: 6 for TCP, 17 for UDP.\n"
-                       "Default: 132 for 'sctp'",
-                  metavar='PROTO')
+def print_help():
+    p = get_option_parser()
+    p.print_help()
 
-parser.add_option("-t", "--timeout", dest="timeout", type="int", default=None,
-                  help="Amount of time to collect packets'",
-                  metavar='COUNT')
-
-parser.add_option("-c", "--count", dest="count", type="int", default=0,
-                  help="Max packet count before exiting'",
-                  metavar='COUNT')
-
-parser.add_option("-s", "--src-addrs", dest="srcaddrs", default="",
-                  help="Comma delimited list of src ip addresses used to filter", metavar="ADDRS")
-
-parser.add_option("-d", "--dst-addrs", dest="dstaddrs", default="",
-                  help="Comma delimited list of dst ip addresses used to filter, "
-                       "example: 228.7.7.3", metavar="ADDRS")
-
-parser.add_option("--bind", dest="bind", action='store_true', default=False,
-                  help="Flag to enable port binding, default:false")
-
-parser.add_option("-v", "--verbose", dest="verbose", type='int', default=INFO,
-                  help="Verbose level, 0=quiet, 1=info, 2=debug, 3=trace. Default=1")
-
-parser.add_option("-a", "--addr", dest="addr", default='',
-                  help="Local addr to bind to, default is '' or 'listen on all'", metavar='HOST')
-
-parser.add_option("-f", "--file", dest="resultsfile", default="",
-                  help="File Path to save results to", metavar="ADDRS")
-options, args = parser.parse_args()
-
-HOST = options.addr
-PROTO = options.proto
-BIND = options.bind
-COUNT = options.count
-VERBOSE = options.verbose
-TIMEOUT = options.timeout
-DSTPORTS = {}
-if options.destports:
-    for port in options.destports.split(','):
-        DSTPORTS[int(port)] = 0
-if len(DSTPORTS) > 1 and BIND:
-    raise ValueError('Cannot use BIND option with more than one port at this time')
-SRCPORTS = {}
-if options.srcports:
-    for port in options.srcports.split(','):
-        SRCPORTS[int(port)] = 0
-SRCADDRS = {}
-if options.srcaddrs:
-    for addr in options.srcaddrs.split(','):
-        SRCADDRS[str(addr).strip()] = {}
-DSTADDRS = {}
-if options.dstaddrs:
-    for addr in options.dstaddrs.split(','):
-        DSTADDRS[str(addr).strip()] = {}
-results = {'packets': {}, 'protocol': PROTO, 'elapsed': None, 'count': None,
-           'name': options.testname}
-sock = None
-file = None
-line = "--------------------------------------------------------------------------------"
+def remote_sniffer(ssh, src_addrs=None, proto=17, dst_addrs="228.7.7.3", port='8773',
+                   count=30, timeout=15, verbose_level=DEBUG):
+    script = sftp_file(ssh, verbose_level=verbose_level)
+    cmd = "python {0} -o {1} -c {2} -v0 ".format(script, proto, count)
+    if src_addrs:
+        cmd += " -s '{0}' ".format(src_addrs)
+    if dst_addrs:
+        cmd += " -d '{0}' ".format(dst_addrs)
+    if port:
+        cmd += " -p '{0}' ".format(port)
+    if timeout:
+        cmd += " -t {0} ".format(timeout)
+    out = ssh.sys(cmd, listformat=False, code=0)
+    jout = json.loads(out)
+    return jout
 
 
 def debug(msg, level=DEBUG):
@@ -181,11 +149,74 @@ def debug(msg, level=DEBUG):
     :param level: verbosity level of this message
     :return: None
     """
-    if not VERBOSE:
+    if not VERBOSE_LVL:
         return
-    if VERBOSE >= level:
+    if VERBOSE_LVL >= level:
         for line in str(msg).splitlines():
             print "# {0}".format(str(line))
+
+
+def get_proto_name(number):
+    """
+    Attempt to convert a protocol number into a known name
+
+    :param number: int, protocol number
+    :return: string, protocol name if found, else the number as a string
+    """
+    for proto, value in socket.__dict__.iteritems():
+        if proto.startswith('IPPROTO_') and value == number:
+            return str(proto).replace('IPPROTO_', '')
+    return str(number)
+
+def get_option_parser():
+    parser = OptionParser()
+
+    parser.add_option("-n", "--testname", dest="testname", default=None,
+                      help="Name used to identify test results", metavar='TESTNAME')
+
+    parser.add_option("-p", "--dst-ports", dest="destports", default='',
+                      help="Comma separated list of Destination Ports to filter on, example:8773",
+                      metavar='PORT')
+
+    parser.add_option("-r", "--src-ports", dest="srcports", default="",
+                      help="Comma separated list of Source Ports to filter on", metavar='PORT')
+
+    parser.add_option("-o", "--proto", dest="proto", type="int", default=17,
+                      help="Protocol type, examples: 6 for TCP, 17 for UDP.\n"
+                           "Default: 132 for 'sctp'",
+                      metavar='PROTO')
+
+    parser.add_option("-t", "--timeout", dest="timeout", type="int", default=None,
+                      help="Amount of time to collect packets'",
+                      metavar='COUNT')
+
+    parser.add_option("-c", "--count", dest="count", type="int", default=0,
+                      help="Max packet count before exiting'",
+                      metavar='COUNT')
+
+    parser.add_option("-s", "--src-addrs", dest="srcaddrs", default="",
+                      help="Comma delimited list of src ip addresses used to filter",
+                      metavar="ADDRS")
+
+    parser.add_option("-d", "--dst-addrs", dest="dstaddrs", default="",
+                      help="Comma delimited list of dst ip addresses used to filter, "
+                           "example: 228.7.7.3", metavar="ADDRS")
+
+    parser.add_option("--bind", dest="bind", action='store_true', default=False,
+                      help="Flag to enable port binding, default:false")
+
+    parser.add_option("-v", "--verbose", dest="verbose", type='int', default=INFO,
+                      help="Verbose level, 0=quiet, 1=info, 2=debug, 3=trace. Default=1")
+
+    parser.add_option("-a", "--addr", dest="addr", default='',
+                      help="Local addr to bind to, default is '' or 'listen on all'",
+                      metavar='HOST')
+
+    parser.add_option("-f", "--file", dest="resultsfile", default="",
+                      help="File Path to save results to", metavar="ADDRS")
+    return parser
+
+
 
 ##################################################################################################
 #                                           IP HEADER
@@ -232,102 +263,166 @@ class IPHdr(object):
                       self.dst_addr), level=verbose)
 
 
-##################################################################################################
+###############################################################################################
 #                       Start main socket listener routine...
-##################################################################################################
+###############################################################################################
 
-start = time.time()
-debug('Opening Socket for Protocol:{0}'.format(PROTO), level=DEBUG)
+if __name__ == "__main__":
+    opt_parser = get_option_parser()
+    options, args = opt_parser.parse_args()
 
-try:
-    sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, PROTO)
-    if BIND:
-        bport = DSTPORTS.iterkeys().next()
-        debug("Binding to:'{0}':{1}".format(HOST, bport), DEBUG)
-        sock.bind((HOST, bport))
+    HOST = options.addr
+    PROTO = options.proto
+    if PROTO < 0 or PROTO > 254:
+        raise ValueError('Invalid Protocol: "{0}"'.format(PROTO))
+    BIND = options.bind
+    COUNT = options.count
+    if COUNT and COUNT < 0:
+        raise ValueError('Count must be >= 0: "{0}"'.format(COUNT))
+    VERBOSE_LVL = options.verbose
+    TIMEOUT = options.timeout
+    if TIMEOUT and TIMEOUT < 0:
+        raise ValueError('If set, Timeout must be >= 0: "{0}"'.format(TIMEOUT))
+    DSTPORTS = {}
+    if options.destports:
+        for port in options.destports.split(','):
+            DSTPORTS[int(port)] = 0
+    if len(DSTPORTS) > 1 and BIND:
+        raise ValueError('Cannot use BIND option with more than one port at this time')
+    SRCPORTS = {}
+    if options.srcports:
+        for port in options.srcports.split(','):
+            SRCPORTS[int(port)] = 0
+    SRCADDRS = {}
+    if options.srcaddrs:
+        for addr in options.srcaddrs.split(','):
+            SRCADDRS[str(addr).strip()] = {}
+    DSTADDRS = {}
+    if options.dstaddrs:
+        for addr in options.dstaddrs.split(','):
+            DSTADDRS[str(addr).strip()] = {}
+
+    if options.testname is None:
+        options.testname = "PROTO:{0}, SRCADDRS:{1}, DSTADDRS:{2}, PORTS:{3}"\
+            .format(PROTO, SRCADDRS, DSTADDRS, DSTPORTS)
+
+    # Init results dict...
+    results = {'packets': {},
+               'protocol': PROTO,
+               'elapsed': None,
+               'count': None,
+               'name': options.testname ,
+               'error': '',
+               'date': str(time.asctime())}
+
+    sock = None
+    file = None
     pkts = 0
-    done = False
-    time_remaining = TIMEOUT
-    while not done:
-        if TIMEOUT is not None:
-            time_remaining = TIMEOUT - (time.time() - start)
-            if time_remaining <= 0:
-                done = True
-                continue
-        if COUNT == 0 or pkts <= COUNT:
-            if time_remaining is not None:
-                sock.settimeout(time_remaining)
-            try:
-                data, (ip, info) = sock.recvfrom(65565)
-                if options.verbose >= TRACE:
-                    sys.stdout.write('#')
-                    sys.stdout.flush()
-            except socket.timeout:
-                done = True
-                continue
-            # Parse IP header...
-            iphdr = IPHdr(data)
+    line = "--------------------------------------------------------------------------------"
 
-            # Check packet info against the provided filters...
-            if PROTO and PROTO != iphdr.protocol:
-                continue
-            if DSTPORTS:
-                srcport, dstport = struct.unpack('!HH',
-                                                 data[iphdr.header_len:iphdr.header_len + 4])
-                if SRCPORTS and srcport not in SRCPORTS:
-                    continue
-                if DSTPORTS and dstport not in DSTPORTS:
-                    continue
-            else:
-                srcport = 'unknown'
-                dstport = 'unknown'
+    start = time.time()
+    debug('Begin Capture For Protocol:{0}/{1}'.format(get_proto_name(PROTO), PROTO), level=INFO)
 
-            if ((not SRCADDRS or (iphdr.src_addr in SRCADDRS)) and
-                    (not DSTADDRS or (iphdr.dst_addr in DSTADDRS))):
-                # Store info in results dict...
-                if iphdr.src_addr not in results['packets']:
-                    results['packets'][iphdr.src_addr] = {}
-                if iphdr.dst_addr not in results['packets'][iphdr.src_addr]:
-                    results['packets'][iphdr.src_addr][iphdr.dst_addr] = {}
-                if dstport not in results['packets'][iphdr.src_addr][iphdr.dst_addr]:
-                    results['packets'][iphdr.src_addr][iphdr.dst_addr][dstport] = 1
-                else:
-                    results['packets'][iphdr.src_addr][iphdr.dst_addr][dstport] += 1
-
-                # Print packet and debug info...
-                debug(line, INFO)
-                iphdr.print_me()
-                if DSTPORTS:
-                    debug('Src Port:{0}, Dst Port:{1}'.format(srcport, dstport), INFO)
-                if not QUIET:
-                    dlen = 0
-                    plen = len(data)
-                    if plen >= iphdr.header_len:
-                        data = data[iphdr.header_len:]
-                        dlen = len(data)
-                    debug('From:{0}, Pkt:{1}, Data:{2}'.format(ip, plen, dlen), DEBUG)
-                    debug('Info:{0}'.format(info), DEBUG)
-                    debug('Data:{0}'.format(data), DEBUG)
-
-                # This packet met the provided filter criteria increment counter
-                pkts += 1
-        else:
-            done = True
-except KeyboardInterrupt:
-    done = True
-finally:
     try:
-        if sock:
-            sock.close()
-    except Exception as SE:
-        debug('Error while closing socket:"{0}"'.format(SE), INFO)
-    elapsed = "%.2f" % (time.time() - start)
-    results['count'] = pkts
-    results['elapsed'] = float(elapsed)
-    # print "Packets:{0}, Time:{1}".format(pkts, elapsed)
-    out = "\n{0}\n".format(json.dumps(results, indent=4, sort_keys=True))
-    print out
-    if options.resultsfile:
-        with open(options.resultsfile, 'a+') as res_file:
-            res_file.write(out)
-            res_file.flush()
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, PROTO)
+        except socket.error as SE:
+            if 'not permitted' in SE.strerror:
+                try:
+                    results['error'] += ('ERROR: This may need additional permission(s) to run? '
+                                         'root, sudo, etc? Err:"{0}"\n'.format(SE))
+                except:
+                    pass
+            raise
+        if BIND:
+            bport = DSTPORTS.iterkeys().next()
+            debug("Binding to:'{0}':{1}".format(HOST, bport), DEBUG)
+            sock.bind((HOST, bport))
+        pkts = 0
+        done = False
+        time_remaining = TIMEOUT
+        while not done:
+            if TIMEOUT is not None:
+                time_remaining = TIMEOUT - (time.time() - start)
+                if time_remaining <= 0:
+                    done = True
+                    continue
+            if COUNT == 0 or pkts < COUNT:
+                if time_remaining is not None:
+                    sock.settimeout(time_remaining)
+                try:
+                    data, (ip, info) = sock.recvfrom(65565)
+                    if options.verbose >= TRACE:
+                        sys.stdout.write('#')
+                        sys.stdout.flush()
+                except socket.timeout:
+                    done = True
+                    continue
+                # Parse IP header...
+                iphdr = IPHdr(data)
+
+                # Check packet info against the provided filters...
+                if PROTO and PROTO != iphdr.protocol:
+                    continue
+                if DSTPORTS:
+                    srcport, dstport = struct.unpack('!HH',
+                                                     data[iphdr.header_len:iphdr.header_len + 4])
+                    if SRCPORTS and srcport not in SRCPORTS:
+                        continue
+                    if DSTPORTS and dstport not in DSTPORTS:
+                        continue
+                else:
+                    srcport = 'unknown'
+                    dstport = 'unknown'
+
+                if ((not SRCADDRS or (iphdr.src_addr in SRCADDRS)) and
+                        (not DSTADDRS or (iphdr.dst_addr in DSTADDRS))):
+                    # Store info in results dict...
+                    if iphdr.src_addr not in results['packets']:
+                        results['packets'][iphdr.src_addr] = {}
+                    if iphdr.dst_addr not in results['packets'][iphdr.src_addr]:
+                        results['packets'][iphdr.src_addr][iphdr.dst_addr] = {}
+                    if dstport not in results['packets'][iphdr.src_addr][iphdr.dst_addr]:
+                        results['packets'][iphdr.src_addr][iphdr.dst_addr][dstport] = 1
+                    else:
+                        results['packets'][iphdr.src_addr][iphdr.dst_addr][dstport] += 1
+
+                    # Print packet and debug info...
+                    debug(line, INFO)
+                    iphdr.print_me()
+                    if DSTPORTS:
+                        debug('Src Port:{0}, Dst Port:{1}'.format(srcport, dstport), INFO)
+                    if not QUIET:
+                        dlen = 0
+                        plen = len(data)
+                        if plen >= iphdr.header_len:
+                            data = data[iphdr.header_len:]
+                            dlen = len(data)
+                        debug('From:{0}, Pkt:{1}, Data:{2}'.format(ip, plen, dlen), DEBUG)
+                        debug('Info:{0}'.format(info), DEBUG)
+                        debug('Data:{0}'.format(data), DEBUG)
+
+                    # This packet met the provided filter criteria increment counter
+                    pkts += 1
+            else:
+                done = True
+    except KeyboardInterrupt:
+        done = True
+    except Exception as E:
+        results['error'] += traceback.format_exc()
+    finally:
+        try:
+            if sock:
+                sock.close()
+        except Exception as SE:
+            debug('Error while closing socket:"{0}"'.format(SE), INFO)
+        elapsed = "%.2f" % (time.time() - start)
+        results['count'] = pkts
+        results['elapsed'] = float(elapsed)
+        # print "Packets:{0}, Time:{1}".format(pkts, elapsed)
+        out = "\n{0}\n".format(json.dumps(results, indent=4, sort_keys=True))
+        print out
+        if options.resultsfile:
+            with open(options.resultsfile, 'a+') as res_file:
+                res_file.write(out)
+                res_file.flush()

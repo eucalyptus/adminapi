@@ -189,13 +189,15 @@ class SystemConnection(ServiceConnection):
             walrus = out[0]
         return walrus
 
-    def show_cloud_legacy_summary(self, repo_info=False, print_method=None, print_table=True):
+    def show_cloud_legacy_summary(self, repo_info=True, print_method=None, file_path=None,
+                                  print_table=True):
         """
         Creates a table representing the legacy Eutester/QA reprsentation of a Eucalyptus
         cloud. This can be used for legacy eutester tests, etc..
         :param repo_info: bool, if True will use the work REPO in place of Zone for the 5th column
         :param print_method: method used to print this table, defaults to self.log.info
         :param print_table: bool, if False will return the table obj
+        :param file_path: string representing a local file path to save this information to
         :return: table obj if print_table is False
         """
         ret = ""
@@ -216,6 +218,10 @@ class SystemConnection(ServiceConnection):
                 rz_col = split[4]
             pt.add_row([split[0], split[1], split[2], split[3], rz_col, service_codes])
             ret += "{0}\n".format(host.summary_string)
+        if file_path:
+            with open(file_path, 'w') as save_file:
+                save_file.write(str(pt))
+                save_file.flush()
         if print_table:
             print_method("\n{0}\n".format(str(pt)))
         else:

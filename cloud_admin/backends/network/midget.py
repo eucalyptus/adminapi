@@ -8,7 +8,6 @@ from midonetclient.host import Host
 from midonetclient.host_interface_port import HostInterfacePort
 from midonetclient.host_interface import HostInterface
 from midonetclient.ip_addr_group import IpAddrGroup
-from eutester.testcase_utils import WaitForResultException
 from cloud_utils.net_utils.sshconnection import SshConnection
 from cloud_utils.net_utils import is_address_in_network
 from cloud_utils.log_utils import markup
@@ -1338,7 +1337,7 @@ class Midget(object):
                 self.info(self._bold("Trying to ping the instance private addr('{0}') now...?)"
                                       .format(instance.private_ip_address), 91))
                 self.ping_instance_private_ip_from_euca_internal(instance)
-            except WaitForResultException:
+            except RuntimeError:
                 pass
         port = self.get_bridge_port_for_instance_learned(instance)
         return port

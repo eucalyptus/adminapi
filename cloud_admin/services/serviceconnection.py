@@ -1156,7 +1156,6 @@ class ServiceConnection(AWSQueryConnection):
         '''
         Summarize Eucalyptus properties in table format
 
-        :param connection: cloud_admin connection
         :param properties: list of property names, or Eucaproperties to summarize
         :param description: bool, show property descriptions
         :param grid: bool, show table in grid format
@@ -1164,7 +1163,8 @@ class ServiceConnection(AWSQueryConnection):
         :param defaults: bool, show property defaults in table
         :param print_table: bool, if True will print table using connection.debug_method()
                             if False will return the table object
-        :param prop_names: property names used to filter query response
+        :param search: string, to use as filter for name of properties
+        :param nameprefix: property names used to filter query responsee
         '''
         return SHOW_PROPERTIES(self, *args, **kwargs)
 
