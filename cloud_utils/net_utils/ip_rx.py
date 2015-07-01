@@ -87,6 +87,7 @@ Examples:
 
 '''
 from os.path import abspath, basename
+import re
 import socket
 import sys
 import traceback
@@ -124,10 +125,10 @@ def print_help():
     p = get_option_parser()
     p.print_help()
 
-def remote_sniffer(ssh, src_addrs=None, proto=17, dst_addrs="228.7.7.3", port='8773',
-                   count=30, timeout=15, verbose_level=DEBUG):
+def remote_receiver(ssh, src_addrs=None, proto=17, dst_addrs=None, port=None,
+                   count=30, bind=False, timeout=15, verbose_level=DEBUG):
     script = sftp_file(ssh, verbose_level=verbose_level)
-    cmd = "python {0} -o {1} -c {2} -v0 ".format(script, proto, count)
+    cmd = "python {0} -o {1} -c {2} -v{3} ".format(script, proto, count, verbose_level)
     if src_addrs:
         cmd += " -s '{0}' ".format(src_addrs)
     if dst_addrs:
@@ -136,8 +137,20 @@ def remote_sniffer(ssh, src_addrs=None, proto=17, dst_addrs="228.7.7.3", port='8
         cmd += " -p '{0}' ".format(port)
     if timeout:
         cmd += " -t {0} ".format(timeout)
-    out = ssh.sys(cmd, listformat=False, code=0)
-    jout = json.loads(out)
+    if bind:
+        if port is None:
+            raise ValueError('Need to provide port when using bind option')
+        cmd += " --bind "
+    out = ssh.sys(cmd, listformat=True, code=0)
+    try:
+        lines = ""
+        for line in out:
+            if not re.search('^\s*#', line):
+                lines += line + '\n'
+        jout = json.loads(lines)
+    except Exception as JE:
+        jout =  '{0}\nJSON loads failed, error:{1}'.format(lines, JE)
+        #raise
     return jout
 
 
@@ -153,7 +166,7 @@ def debug(msg, level=DEBUG):
         return
     if VERBOSE_LVL >= level:
         for line in str(msg).splitlines():
-            print "# {0}".format(str(line))
+            sys.stdout.write("# {0}".format(str(line)))
 
 
 def get_proto_name(number):

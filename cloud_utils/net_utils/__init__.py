@@ -1,11 +1,14 @@
 
-
+import json
 import re
 import socket
 import subprocess
 import sys
 import time
+import threading
 from cloud_utils.system_utils import local
+from cloud_utils.net_utils.ip_rx import remote_receiver
+from cloud_utils.net_utils.ip_tx import remote_sender
 
 
 def test_port_status(ip,
@@ -156,3 +159,62 @@ def is_address_in_network(ip_addr, network):
         netaddr = int(''.join([ '%02x' % int(x) for x in netstr.split('.') ]), 16)
         mask = (0xffffffff << (32 - int(bits))) & 0xffffffff
         return (ipaddr & mask) == (netaddr & mask)
+
+def packet_test(sender_ssh, reciever_ssh, protocol, dest_ip=None, src_addrs=None,
+                port=None, bind=False, count=1, payload=None, timeout=5, verbose=False):
+    dest_ip = dest_ip or reciever_ssh.host
+
+    class Receiver(threading.Thread):
+        def __init__(self, ssh, src_addrs=None, port=None, proto=None, bind=False, count=1,
+                     verbose=False, timeout=5):
+            self.ssh = ssh
+            self.src_addrs = src_addrs
+            self.port = port
+            self.proto = proto
+            self.bind = bind
+            self.count = count
+            self.result = None
+            self.timeout = timeout
+            if verbose:
+                self.verbose_level = 1
+            else:
+                self.verbose_level = 2
+            super(Receiver, self).__init__()
+
+        def run(self):
+            self.result = remote_receiver(ssh=self.ssh, src_addrs=self.src_addrs,
+                                          port=self.port, proto=self.proto,
+                                          bind=self.bind, count=self.count,
+                                          verbose_level=self.verbose_level, timeout=timeout)
+
+    class Sender(threading.Thread):
+        def __init__(self, ssh, dest_ip, proto, port=None, count=1, verbose=False):
+            self.ssh = ssh
+            self.dest_ip = dest_ip
+            self.proto = proto
+            self.port = port
+            self.count = count
+            self.result = None
+            self.verbose = verbose
+            super(Sender, self).__init__()
+
+        def run(self):
+            self.result = remote_sender(ssh=self.ssh, dst_addr=self.dest_ip, proto=self.proto,
+                                        port=self.port, count=self.count, verbose=self.verbose)
+
+    rx = Receiver(ssh=reciever_ssh, src_addrs=src_addrs, port=port, proto=protocol,
+                  bind=bind, count=count,verbose=verbose, timeout=timeout)
+    rx.start()
+    # time.sleep(2)
+    tx = Sender(ssh=sender_ssh, dest_ip=dest_ip, proto=protocol, port=port, count=count,
+                verbose=verbose)
+    tx.start()
+    rx.join()
+    tx.join()
+    if not isinstance(rx.result, dict):
+        raise RuntimeError('Failed to read in results dict from remote receiver, output: {0}'
+                           .format(rx.result))
+    if verbose:
+        json.dumps(rx.result, sort_keys=True, indent=4)
+    return rx.result
+

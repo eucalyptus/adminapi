@@ -160,7 +160,7 @@ class Midget(object):
     def _get_instance(self, instance):
         fetched_ins = None
         if not isinstance(instance, Instance):
-            if isinstance(instance, str):
+            if isinstance(instance, basestring):
                 fetched_ins = self._get_instance_by_id(id=instance)
             else:
                 raise ValueError('instance not type boto Instance nor instance id string. '
