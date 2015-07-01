@@ -6,9 +6,11 @@ import subprocess
 import sys
 import time
 import threading
+from thread import LockType
 from cloud_utils.system_utils import local
-from cloud_utils.net_utils.ip_rx import remote_receiver
+from cloud_utils.net_utils.ip_rx import remote_receiver, START_MESSAGE
 from cloud_utils.net_utils.ip_tx import remote_sender
+from cloud_utils.net_utils.sshconnection import SshCbReturn
 
 
 def test_port_status(ip,
@@ -160,32 +162,64 @@ def is_address_in_network(ip_addr, network):
         mask = (0xffffffff << (32 - int(bits))) & 0xffffffff
         return (ipaddr & mask) == (netaddr & mask)
 
+
+def packet_test_cb(buf, *args):
+    """
+    Used to trigger packet sender when receiver is ready,
+    """
+    ret = SshCbReturn()
+    ret.buf = buf
+    # ret.removecb = True
+    ret.nextargs = args
+    if len(args) > 1:
+        start_lock = args[0]
+        verbose = args[1]
+        if re.search(START_MESSAGE, buf):
+            start_lock.release()
+            ret.nextargs = [verbose]
+    else:
+        verbose = args[0]
+    if verbose:
+        sys.stdout.write(buf)
+        sys.stdout.flush()
+    return ret
+
+
 def packet_test(sender_ssh, reciever_ssh, protocol, dest_ip=None, src_addrs=None,
                 port=None, bind=False, count=1, payload=None, timeout=5, verbose=False):
     dest_ip = dest_ip or reciever_ssh.host
-
+    # Make sure the connections are active
+    for ssh_connection in [sender_ssh, reciever_ssh]:
+        if not ssh_connection.connection._transport.isAlive():
+            ssh_connection.refresh_connection()
     class Receiver(threading.Thread):
         def __init__(self, ssh, src_addrs=None, port=None, proto=None, bind=False, count=1,
-                     verbose=False, timeout=5):
+                     verbose=False, timeout=5, start_lock=None):
             self.ssh = ssh
             self.src_addrs = src_addrs
             self.port = port
             self.proto = proto
             self.bind = bind
             self.count = count
-            self.result = None
             self.timeout = timeout
+            self.start_lock = start_lock
             if verbose:
                 self.verbose_level = 1
             else:
                 self.verbose_level = 2
+            self.result = None
             super(Receiver, self).__init__()
 
         def run(self):
+            if self.start_lock:
+                self.start_lock.acquire()
+            sys.stdout.write('Starting receiver...\n')
             self.result = remote_receiver(ssh=self.ssh, src_addrs=self.src_addrs,
                                           port=self.port, proto=self.proto,
                                           bind=self.bind, count=self.count,
-                                          verbose_level=self.verbose_level, timeout=timeout)
+                                          verbose_level=self.verbose_level,
+                                          cb=packet_test_cb, cbargs=(self.start_lock, verbose),
+                                          timeout=timeout)
 
     class Sender(threading.Thread):
         def __init__(self, ssh, dest_ip, proto, port=None, count=1, verbose=False):
@@ -199,18 +233,25 @@ def packet_test(sender_ssh, reciever_ssh, protocol, dest_ip=None, src_addrs=None
             super(Sender, self).__init__()
 
         def run(self):
+            sys.stdout.write('Starting Sender...\n')
             self.result = remote_sender(ssh=self.ssh, dst_addr=self.dest_ip, proto=self.proto,
                                         port=self.port, count=self.count, verbose=self.verbose)
 
+    start_lock = threading.Lock()
     rx = Receiver(ssh=reciever_ssh, src_addrs=src_addrs, port=port, proto=protocol,
-                  bind=bind, count=count,verbose=verbose, timeout=timeout)
+                  bind=bind, count=count,verbose=verbose, timeout=timeout, start_lock=start_lock)
     rx.start()
-    # time.sleep(2)
+    # time.sleep(1)
     tx = Sender(ssh=sender_ssh, dest_ip=dest_ip, proto=protocol, port=port, count=count,
                 verbose=verbose)
+    start_lock.acquire()
     tx.start()
-    rx.join()
-    tx.join()
+    start_lock.release()
+    start = time.time()
+    timeout = timeout + 5
+    rx.join(timeout=timeout)
+    timeout = max(timeout - int(time.time() - start), 0)
+    tx.join(timeout=timeout)
     if not isinstance(rx.result, dict):
         raise RuntimeError('Failed to read in results dict from remote receiver, output: {0}'
                            .format(rx.result))

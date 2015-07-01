@@ -100,6 +100,7 @@ DEBUG = 2
 INFO = 1
 QUIET = 0
 VERBOSE_LVL = INFO
+START_MESSAGE = 'Begin Capture'
 
 
 def get_script_path():
@@ -126,7 +127,7 @@ def print_help():
     p.print_help()
 
 def remote_receiver(ssh, src_addrs=None, proto=17, dst_addrs=None, port=None,
-                   count=30, bind=False, timeout=15, verbose_level=DEBUG):
+                    count=30, bind=False, timeout=15, cb=None, cbargs=None, verbose_level=DEBUG):
     script = sftp_file(ssh, verbose_level=verbose_level)
     cmd = "python {0} -o {1} -c {2} -v{3} ".format(script, proto, count, verbose_level)
     if src_addrs:
@@ -141,7 +142,11 @@ def remote_receiver(ssh, src_addrs=None, proto=17, dst_addrs=None, port=None,
         if port is None:
             raise ValueError('Need to provide port when using bind option')
         cmd += " --bind "
-    out = ssh.sys(cmd, listformat=True, code=0)
+    cmddict = ssh.cmd(cmd, listformat=True, cb=cb, cbargs=cbargs)
+    out = cmddict.get('output')
+    if cmddict.get('status') != 0:
+        raise RuntimeError('{0}\n"{1}" cmd failed with status:{2}, on host:{3}'
+                           .format(out, cmd, cmddict.get('status'), ssh.host))
     try:
         lines = ""
         for line in out:
@@ -166,7 +171,7 @@ def debug(msg, level=DEBUG):
         return
     if VERBOSE_LVL >= level:
         for line in str(msg).splitlines():
-            sys.stdout.write("# {0}".format(str(line)))
+            sys.stdout.write("# {0}\n".format(str(line)))
 
 
 def get_proto_name(number):
@@ -334,7 +339,8 @@ if __name__ == "__main__":
     line = "--------------------------------------------------------------------------------"
 
     start = time.time()
-    debug('Begin Capture For Protocol:{0}/{1}'.format(get_proto_name(PROTO), PROTO), level=INFO)
+    debug('{0} For Protocol:{1}/{2}'.format(START_MESSAGE, get_proto_name(PROTO), PROTO),
+          level=INFO)
 
     try:
         try:

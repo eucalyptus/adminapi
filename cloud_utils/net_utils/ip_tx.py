@@ -49,7 +49,7 @@ def debug(msg, level=DEBUG):
         return
     if VERBOSE_LVL >= level:
         for line in str(msg).splitlines():
-            sys.stdout.write("# {0}".format(str(line)))
+            sys.stdout.write("# {0}\n".format(str(line)))
 
 
 def get_src(dest):
