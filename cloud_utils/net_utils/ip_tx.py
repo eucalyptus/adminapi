@@ -155,16 +155,17 @@ def send_tcp_packet(destip, dstport=101, proto=6, payload=None, bufsize=4096):
             s.close()
     return data
 
-def send_icmp_packet(destip, icmptype=ICMP_ECHO_REQUEST, id=1234, seqnum=1, code=0, proto=1,
-                     ptype=None, payload='ICMP TEST PACKET'):
+def send_icmp_packet(destip, id=1234, seqnum=1, code=0, proto=1, ptype=None,
+                     payload='ICMP TEST PACKET'):
     if payload is None:
             payload = 'ICMP TEST PACKET'
     payload = payload or ""
     s = None
+    if ptype is None:
+        ptype=ICMP_ECHO_REQUEST
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_RAW, proto)
-        icmp = ICMP(destaddr=destip, id=id, seqnum=seqnum, code=code, icmptype=icmptype,
-                    ptype=ptype, payload=payload)
+        icmp = ICMP(destaddr=destip, id=id, seqnum=seqnum, code=code, ptype=ptype, payload=payload)
         s.sendto(icmp.pack(), (destip, 0))
     except socket.error as SE:
         if SE.errno == 1 and 'not permitted' in SE.strerror:

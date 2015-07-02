@@ -40,6 +40,7 @@ def SHOW_SERVICES(connection, services=None, service_type=None, show_part=False,
         return markup(*args, **kwargs)
 
     h_marks = [1, 94]
+    uri_len = 64
     cluster_hdr = n_markup('CLUSTER', h_marks)
     name_hdr = n_markup('NAME', h_marks)
     type_hdr = n_markup('TYPE', h_marks)
@@ -47,7 +48,7 @@ def SHOW_SERVICES(connection, services=None, service_type=None, show_part=False,
     uri_hdr = n_markup('URI', h_marks)
     part_hdr = n_markup('PARTITION', h_marks)
     pt = PrettyTable([type_hdr, name_hdr, state_hdr, cluster_hdr, uri_hdr, part_hdr])
-    pt.max_width[uri_hdr] = 64
+    pt.max_width[uri_hdr] = uri_len
     pt.align = 'l'
     pt.align[cluster_hdr] = 'c'
     pt.padding_width = 0
@@ -111,13 +112,17 @@ def SHOW_SERVICES(connection, services=None, service_type=None, show_part=False,
         if (service.partition == 'eucalyptus' and service.type != 'eucalyptus') \
                 or service.partition == 'bootstrap':
             markups = [1, 2]
+        uri = service.uri
         if state != "ENABLED":
             markups = [1, 4, 31]
+            message = service.message
+            message = [message[i:i+uri_len] for i in range(0, len(message), uri_len)]
+            uri = "{0}\n{1}".format(uri, "\n".join(message))
         else:
             state = n_markup(state, [1, 92])
         pt.add_row([n_markup(service.type, (markups or [1])), n_markup(service.name, markups),
                     n_markup(state, markups), n_markup(partition, markups),
-                    n_markup(service.uri, markups), n_markup(service.partition, markups)])
+                    n_markup(uri, markups), n_markup(service.partition, markups)])
     for stype in service_types:
         pt.add_row([n_markup(stype.name, [2, 31]), n_markup('NOT REGISTERED?', [2, 31]),
                     n_markup('MISSING', [2, 31]), n_markup('--', [2, 31]),
@@ -471,10 +476,10 @@ class EucaService(EucaBaseObj):
         return 'ENABLED' == self.state
 
     def disable(self):
-        return self.modify_service_state(self, 'DISABLE')
+        return self.modify_service_state(state='DISABLE')
 
     def enable(self):
-        return self.modify_service_state(self, 'ENABLE')
+        return self.modify_service_state(state='ENABLE')
 
     def get_linux_service_name(self):
         '''
@@ -524,7 +529,8 @@ class EucaService(EucaBaseObj):
                 raise ValueError('Must set "name" before using update(). Name:{0}'
                                  .format(self.name))
             try:
-                new_service = self.connection.get_services(service_names=self.name)[0]
+                new_service = self.connection.get_services(service_type=self.type,
+                                                           service_names=self.name)[0]
             except Exception as LE:
                 if silent:
                     errmsg = "{0}\n{1}\n".format(get_traceback(), str(LE))
