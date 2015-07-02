@@ -6,7 +6,6 @@ import subprocess
 import sys
 import time
 import threading
-from thread import LockType
 from cloud_utils.system_utils import local
 from cloud_utils.net_utils.ip_rx import remote_receiver, START_MESSAGE
 from cloud_utils.net_utils.ip_tx import remote_sender
@@ -163,38 +162,35 @@ def is_address_in_network(ip_addr, network):
         return (ipaddr & mask) == (netaddr & mask)
 
 
-def packet_test_cb(buf, *args):
-    """
-    Used to trigger packet sender when receiver is ready,
-    """
-    ret = SshCbReturn()
-    ret.buf = buf
-    # ret.removecb = True
-    ret.nextargs = args
-    if len(args) > 1:
-        start_lock = args[0]
-        verbose = args[1]
-        if re.search(START_MESSAGE, buf):
-            start_lock.release()
-            ret.nextargs = [verbose]
-    else:
-        verbose = args[0]
-    if verbose:
-        sys.stdout.write(buf)
-        sys.stdout.flush()
-    return ret
-
-
-def packet_test(sender_ssh, reciever_ssh, protocol, dest_ip=None, src_addrs=None,
+def packet_test(sender_ssh, receiver_ssh, protocol, dest_ip=None, src_addrs=None,
                 port=None, bind=False, count=1, payload=None, timeout=5, verbose=False):
-    dest_ip = dest_ip or reciever_ssh.host
+    """
+    Test utility to send and receive IP packets of varying protocol types, ports, counts, etc.
+    between 2 remote nodes driven by the SSH connections provided. 
+
+    :param sender_ssh: sshconnection object to send packets from
+    :param receiver_ssh: sshconnection object to receive packets
+    :param protocol: protocol number for packets ie: 1=icmp, 6=tcp, 17=udp, 132=sctp, etc..
+    :param dest_ip: Optional IP for the sender to send packets to, defaults to receiver_ssh.host
+    :param src_addrs: Source addresses the receiver will use to filter rx'd packets
+    :param port: optional port to use for sending packets to
+    :param bind: option to bind receiver to provided port, maybe needed to rx certain packet types
+    :param count: number of packets to send and expect
+    :param payload: optional payload to include in the sent packets (string buffer)
+    :param timeout: time in seconds to allow
+    :param verbose: boolean, used to control verbose logging of info
+    :return: json result of receiver
+    :raise RuntimeError:
+    """
+    dest_ip = dest_ip or receiver_ssh.host
     # Make sure the connections are active
-    for ssh_connection in [sender_ssh, reciever_ssh]:
+    for ssh_connection in [sender_ssh, receiver_ssh]:
         if not ssh_connection.connection._transport.isAlive():
             ssh_connection.refresh_connection()
-    class Receiver(threading.Thread):
-        def __init__(self, ssh, src_addrs=None, port=None, proto=None, bind=False, count=1,
-                     verbose=False, timeout=5, start_lock=None):
+
+    class Receiver(object):
+        def __init__(self, ssh, sender, src_addrs=None, port=None, proto=None, bind=False, count=1,
+                     verbose=False, timeout=5):
             self.ssh = ssh
             self.src_addrs = src_addrs
             self.port = port
@@ -202,23 +198,42 @@ def packet_test(sender_ssh, reciever_ssh, protocol, dest_ip=None, src_addrs=None
             self.bind = bind
             self.count = count
             self.timeout = timeout
-            self.start_lock = start_lock
+            self.sender = sender
+            self.verbose = verbose
             if verbose:
                 self.verbose_level = 1
             else:
                 self.verbose_level = 2
             self.result = None
-            super(Receiver, self).__init__()
+
+        def packet_test_cb(self, buf, *args):
+            """
+            Used to trigger packet sender when receiver is ready,
+            """
+            ret = SshCbReturn()
+            ret.buf = buf
+            # ret.removecb = True
+            ret.nextargs = args
+            sender = args[0]
+            if re.search(START_MESSAGE, buf):
+                sender.start()
+            if sender.done_time:
+                if verbose:
+                    self.ssh.debug('Sender is Done. Setting command timer to 5 seconds')
+                ret.settimer = 5
+            if verbose:
+                self.ssh.debug(buf)
+            return ret
 
         def run(self):
-            if self.start_lock:
-                self.start_lock.acquire()
-            sys.stdout.write('Starting receiver...\n')
+            if self.verbose:
+                self.ssh.debug('Starting receiver...\n')
             self.result = remote_receiver(ssh=self.ssh, src_addrs=self.src_addrs,
                                           port=self.port, proto=self.proto,
                                           bind=self.bind, count=self.count,
                                           verbose_level=self.verbose_level,
-                                          cb=packet_test_cb, cbargs=(self.start_lock, verbose),
+                                          cb=self.packet_test_cb,
+                                          cbargs=(self.sender, self.verbose),
                                           timeout=timeout)
 
     class Sender(threading.Thread):
@@ -229,29 +244,37 @@ def packet_test(sender_ssh, reciever_ssh, protocol, dest_ip=None, src_addrs=None
             self.port = port
             self.count = count
             self.result = None
+            self.done_time = None
             self.verbose = verbose
             super(Sender, self).__init__()
 
-        def run(self):
-            sys.stdout.write('Starting Sender...\n')
-            self.result = remote_sender(ssh=self.ssh, dst_addr=self.dest_ip, proto=self.proto,
-                                        port=self.port, count=self.count, verbose=self.verbose)
+        def packet_test_cb(self, buf, *args):
+            """
+            Used to trigger packet sender when receiver is ready,
+            """
+            ret = SshCbReturn()
+            ret.buf = buf
+            # ret.removecb = True
+            ret.nextargs = args
+            verbose = args[0]
+            if verbose:
+                self.ssh.debug(buf)
+            return ret
 
-    start_lock = threading.Lock()
-    rx = Receiver(ssh=reciever_ssh, src_addrs=src_addrs, port=port, proto=protocol,
-                  bind=bind, count=count,verbose=verbose, timeout=timeout, start_lock=start_lock)
-    rx.start()
-    # time.sleep(1)
+        def run(self):
+            if self.verbose:
+                self.ssh.debug('Starting Sender...\n')
+            self.result = remote_sender(ssh=self.ssh, dst_addr=self.dest_ip, proto=self.proto,
+                                        port=self.port, count=self.count, verbose=self.verbose,
+                                        cb=self.packet_test_cb, cbargs=[verbose])
+            self.done_time = time.time()
+
     tx = Sender(ssh=sender_ssh, dest_ip=dest_ip, proto=protocol, port=port, count=count,
                 verbose=verbose)
-    start_lock.acquire()
-    tx.start()
-    start_lock.release()
-    start = time.time()
-    timeout = timeout + 5
-    rx.join(timeout=timeout)
-    timeout = max(timeout - int(time.time() - start), 0)
-    tx.join(timeout=timeout)
+    rx = Receiver(ssh=receiver_ssh, src_addrs=src_addrs, port=port, proto=protocol,
+                  bind=bind, count=count,verbose=verbose, timeout=timeout, sender=tx)
+    rx.run()
+
     if not isinstance(rx.result, dict):
         raise RuntimeError('Failed to read in results dict from remote receiver, output: {0}'
                            .format(rx.result))

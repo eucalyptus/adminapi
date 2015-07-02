@@ -61,7 +61,7 @@ def get_src(dest):
 
 
 def remote_sender(ssh, dst_addr, port=None, proto=17,
-                   count=1, timeout=15, data=None, verbose=False):
+                   count=1, timeout=15, data=None, verbose=False, cb=None, cbargs=None):
     if verbose:
         verbose_level = VERBOSE_LVL
     else:
@@ -76,8 +76,12 @@ def remote_sender(ssh, dst_addr, port=None, proto=17,
         cmd += ' -l "{0}"'.format(data.strip('"'))
     out = ""
     debug("CMD: {0}".format(cmd), verbose_level)
-    last_out = ssh.sys(cmd, listformat=False, code=0, timeout=timeout, verbose=verbose)
-    out += last_out
+    cmddict = ssh.cmd(cmd, listformat=False, timeout=timeout, cb=cb, cbargs=cbargs,
+                       verbose=verbose)
+    out += cmddict.get('output')
+    if cmddict.get('status') != 0:
+        raise RuntimeError('{0}\n"{1}" cmd failed with status:{2}, on host:{3}'
+                           .format(out, cmd, cmddict.get('status'), ssh.host))
     debug(out, verbose_level)
     return out
 

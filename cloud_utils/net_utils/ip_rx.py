@@ -142,7 +142,7 @@ def remote_receiver(ssh, src_addrs=None, proto=17, dst_addrs=None, port=None,
         if port is None:
             raise ValueError('Need to provide port when using bind option')
         cmd += " --bind "
-    cmddict = ssh.cmd(cmd, listformat=True, cb=cb, cbargs=cbargs)
+    cmddict = ssh.cmd(cmd, listformat=True, cb=cb, cbargs=cbargs, verbose=(verbose_level == 1))
     out = cmddict.get('output')
     if cmddict.get('status') != 0:
         raise RuntimeError('{0}\n"{1}" cmd failed with status:{2}, on host:{3}'
