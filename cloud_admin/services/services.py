@@ -9,7 +9,6 @@ from operator import itemgetter
 from urlparse import urlparse
 import copy
 import inspect
-import re
 import sys
 import time
 
@@ -737,7 +736,8 @@ class EucaServiceRegResponse(EucaEmpyreanResponse):
 
 class EucaServiceStatus(EucaBaseObj):
     '''
-    Used for parsing child service types from parent service types
+    Used for parsing service status details for services.
+    status details can contain info/messages about service state, state transitions, errors, etc..
     '''
     def __init__(self, connection=None):
         self.datetime = None

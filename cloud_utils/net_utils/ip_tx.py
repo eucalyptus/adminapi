@@ -99,7 +99,7 @@ def send_ip_packet(destip, proto=132, payload=None):
         if s:
             s.close()
 
-def send_sctp_packet(destip, dstport=101, srcport=1000, proto=132, ptype=None, payload=None,
+def send_sctp_packet(destip, dstport=101, srcport=100, proto=132, ptype=None, payload=None,
                      sctpobj=None):
     s = None
     if payload is None:
@@ -107,6 +107,7 @@ def send_sctp_packet(destip, dstport=101, srcport=1000, proto=132, ptype=None, p
     payload = payload or ""
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_RAW, proto)
+        s.setsockopt(socket.SOL_IP, socket.IP_TOS, 0x02) #  set ecn bit
         if not sctpobj:
             sctpobj = SCTP(srcport=srcport, dstport=dstport, ptype=ptype, payload=payload)
         s.sendto(sctpobj.pack(), (destip, dstport))
@@ -119,13 +120,15 @@ def send_sctp_packet(destip, dstport=101, srcport=1000, proto=132, ptype=None, p
             s.close()
 
 
-def send_udp_packet(destip, dstport=101, proto=17, payload=None):
+def send_udp_packet(destip, srcport=None, dstport=101, proto=17, payload=None):
     s = None
     if payload is None:
             payload = 'UDP TEST PACKET'
     payload = payload or ""
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, proto)
+        if srcport is not None:
+            s.bind('', srcport)
         s.sendto(payload, (destip, dstport))
     except socket.error as SE:
         if SE.errno == 1 and 'not permitted' in SE.strerror:
@@ -135,13 +138,15 @@ def send_udp_packet(destip, dstport=101, proto=17, payload=None):
         if s:
             s.close()
 
-def send_tcp_packet(destip, dstport=101, proto=6, payload=None, bufsize=4096):
+def send_tcp_packet(destip, dstport=101, srcport=None, proto=6, payload=None, bufsize=4096):
     s = None
     if payload is None:
             payload = 'TCP TEST PACKET'
     payload = payload or ""
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM, proto)
+        if srcport is not None:
+            s.bind('', srcport)
         s.connect((destip, dstport))
         s.send(payload)
         data = s.recv(bufsize)
@@ -175,7 +180,8 @@ def send_icmp_packet(destip, id=1234, seqnum=1, code=0, proto=1, ptype=None,
         if s:
             s.close()
 
-def send_packet(destip, proto, dstport=345, ptype=None, payload=None, count=1, verbose=DEBUG):
+def send_packet(destip, proto, srcport=100, dstport=345, ptype=None, payload=None, count=1,
+                verbose=DEBUG):
 
     for x in xrange(0, count):
         debug('send_packet: destip:{0}, dstport:{1}, proto:{2}, ptype:{3}'
@@ -183,11 +189,12 @@ def send_packet(destip, proto, dstport=345, ptype=None, payload=None, count=1, v
         if proto in [1, 'icmp']:
             send_icmp_packet(destip=destip, ptype=ptype, payload=payload)
         elif proto in [6, 'tcp']:
-            send_tcp_packet(destip=destip, dstport=dstport, payload=payload)
+            send_tcp_packet(destip=destip, srcport=srcport, dstport=dstport, payload=payload)
         elif proto in [17, 'udp']:
-            send_udp_packet(destip=destip, dstport=dstport, payload=payload)
+            send_udp_packet(destip=destip, srcport=srcport, dstport=dstport, payload=payload)
         elif proto in [132, 'sctp']:
-            send_sctp_packet(destip=destip, ptype=ptype, dstport=dstport, payload=payload)
+            send_sctp_packet(destip=destip, srcport=srcport, ptype=ptype, dstport=dstport,
+                             payload=payload)
         else:
             send_ip_packet(destip=destip, proto=proto, payload=payload)
 
@@ -216,14 +223,22 @@ class ICMP(object):
 
 
 class InitChunk(object):
-    def __init__(self, tag=None, a_rwnd=62464, outstreams=2, instreams=65535, tsn=None,
-                 param_data=""):
-        self.tag = tag or getrandbits(32)
+    def __init__(self, tag=None, a_rwnd=62464, outstreams=10, instreams=65535, tsn=None,
+                 param_data=None):
+        self.tag = tag or getrandbits(32) or 3
         self.a_rwnd = a_rwnd
         self.outstreams = outstreams or 1 # 0 is invalid
         self.instreams = instreams or 1 # 0 is invalid
-        self.tsn = tsn or self.tag
-        self.param_data = param_data or ""
+        self.tsn = tsn or getrandbits(32) or 4
+        if param_data is None:
+            param_data = ""
+            suppaddrtypes = SctpSupportedAddrTypesParam()
+            param_data += suppaddrtypes.pack()
+            ecn = SctpEcnParam()
+            param_data += ecn.pack()
+            fwdtsn = SctpFwdTsnSupportParam()
+            param_data += fwdtsn.pack()
+        self.param_data = param_data
 
     def pack(self):
         packet = struct.pack('!IIHHI', self.tag, self.a_rwnd, self.outstreams, self.instreams,
@@ -231,6 +246,59 @@ class InitChunk(object):
         if self.param_data:
             packet += self.param_data
         return packet
+
+class SctpIPv4Param(object):
+    def __init__(self, type=5, length=8, ipv4addr=None):
+        self.type = type
+        self.length = length
+        self.addr = ipv4addr
+
+    def pack(self):
+        packet = struct.pack('!HHI', self.type, self.length, self.addr)
+        return packet
+
+class SctpSupportedAddrTypesParam(object):
+    def __init__(self, ptype=12, addr_types=None):
+        ipv4 = 5
+        # ipv6 = 6
+        # hostname = 11
+        if addr_types is None:
+            addr_types = [ipv4]
+        if not isinstance(addr_types, list):
+            addr_types = [addr_types]
+        self.addr_types = addr_types
+        self.ptype = 12
+        self.length = 4 + (2 * len(self.addr_types))
+
+    def pack(self):
+        fmt = '!HH'
+        contents = [self.ptype, self.length]
+        for atype in self.addr_types:
+            fmt += 'H'
+            contents.append(atype)
+        contents = tuple(contents)
+        packet = struct.pack(fmt, *contents)
+        # add padding
+        if len(self.addr_types) % 2:
+            packet += struct.pack("H", 0)
+        return packet
+
+class SctpEcnParam(object):
+    def __init__(self, ptype=32768):
+        self.ptype = ptype
+        self.length = 4
+
+    def pack(self):
+        return struct.pack('!HH', self.ptype, self.length)
+
+
+class SctpFwdTsnSupportParam(object):
+    def __init__(self, ptype=49152):
+        self.ptype = ptype
+        self.length = 4
+
+    def pack(self):
+        return struct.pack('!HH', self.ptype, self.length)
 
 
 class DataChunk(object):
@@ -283,6 +351,7 @@ class ChunkHdr(object):
         elif chunktype == 4:
             self.chunkobj = HeartBeatChunk(payload=payload)
         self.chunk_data = self.chunkobj.pack()
+        self.chunklength = 4
         # SCTP header plus rest of packet = length?
         self.chunklength = 4 + len(self.chunk_data)
 
@@ -319,10 +388,18 @@ class SCTP(object):
     # E - If set, this marks the end fragment. An unfragmented chunk has this flag set
     """
     def __init__(self, srcport, dstport, tag=None, ptype=None, payload=None, chunk=None):
+        chunk_data = 0
+        chunk_init = 1
+        chunk_heartbeat = 3
         self.src = srcport
         self.dst = dstport
         self.checksum = 0
-        self.tag = tag or getrandbits(16)
+        if ptype is None:
+            ptype = chunk_init
+            tag = 0
+        if tag is None:
+            tag = getrandbits(16)
+        self.tag = tag
         chunk = chunk or ChunkHdr(chunktype=ptype, payload=payload)
         self.chunk = chunk.pack()
 
@@ -504,12 +581,14 @@ if __name__ == "__main__":
 
     parser = OptionParser()
     parser.add_option("-p", "--dstport", dest="dstport", type="int", default=101,
-                      help="Destination SCTP Port", metavar="PORT")
+                      help="Destination Port", metavar="PORT")
+    parser.add_option("-s", "--srcport", dest="srcport", type="int", default=None,
+                      help="Source Port", metavar="PORT")
     parser.add_option("-c", "--count", dest="count", type="int", default=1,
                       help="Number of packets to send", metavar="COUNT")
     parser.add_option("-d", "--dst", dest="destip", default=None,
                       help="Destination ip", metavar="IP")
-    parser.add_option("-o", "--proto", dest="proto", type="int", default=132,
+    parser.add_option("-o", "--proto", dest="proto", type="int", default=17,
                       help="Protocol number(Examples: 1:icmp, 6:tcp, 17:udp, 132:sctp), "
                            "default:17", metavar="PROTOCOL")
     parser.add_option("-l", "--payload", dest="payload", default=None,
@@ -523,6 +602,9 @@ if __name__ == "__main__":
     VERBOSE_LVL = options.verbose
     destip = options.destip
     proto = options.proto
+    srcport = options.srcport
+    if srcport is not None:
+        srcport = int(srcport)
     dstport = int(options.dstport)
     payload = options.payload
     count = options.count
