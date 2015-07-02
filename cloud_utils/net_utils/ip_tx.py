@@ -47,6 +47,7 @@ def debug(msg, level=DEBUG):
     if VERBOSE_LVL >= level:
         for line in str(msg).splitlines():
             sys.stdout.write("# {0}\n".format(str(line)))
+            sys.stdout.flush()
 
 
 def get_src(dest):
@@ -57,8 +58,8 @@ def get_src(dest):
     return source_ip
 
 
-def remote_sender(ssh, dst_addr, port=None, proto=17,
-                   count=1, timeout=15, data=None, verbose=False, cb=None, cbargs=None):
+def remote_sender(ssh, dst_addr, port=None, srcport=None, proto=17, count=1, timeout=15, data=None,
+                  verbose=False, cb=None, cbargs=None):
     if verbose:
         verbose_level = VERBOSE_LVL
     else:
@@ -68,7 +69,9 @@ def remote_sender(ssh, dst_addr, port=None, proto=17,
 
     cmd = "python {0} -o {1} -c {2} -d {3} ".format(script, proto, count, dst_addr)
     if port:
-        cmd += " -p '{0}' ".format(port)
+        cmd += " -p {0} ".format(port)
+    if srcport is not None:
+        cmd += " -s {0} ".format(srcport)
     if data is not None:
         cmd += ' -l "{0}"'.format(data.strip('"'))
     out = ""
@@ -396,7 +399,7 @@ class SCTP(object):
         self.checksum = 0
         if ptype is None:
             ptype = chunk_init
-            tag = 0
+            tag = 0 #  Verification tag is set to 0 for init
         if tag is None:
             tag = getrandbits(16)
         self.tag = tag

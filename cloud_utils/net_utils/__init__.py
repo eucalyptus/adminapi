@@ -8,8 +8,8 @@ import time
 import threading
 from cloud_utils.system_utils import local
 from cloud_utils.net_utils.ip_rx import remote_receiver, START_MESSAGE
-from cloud_utils.net_utils.ip_tx import remote_sender
-from cloud_utils.net_utils.sshconnection import SshCbReturn
+from cloud_utils.net_utils.ip_tx import remote_sender, send_packet
+from cloud_utils.net_utils.sshconnection import SshCbReturn, SshConnection
 
 
 def test_port_status(ip,
@@ -163,7 +163,8 @@ def is_address_in_network(ip_addr, network):
 
 
 def packet_test(sender_ssh, receiver_ssh, protocol, dest_ip=None, src_addrs=None,
-                port=None, bind=False, count=1, payload=None, timeout=5, verbose=False):
+                port=None, src_port=None, bind=False, count=1, payload=None, timeout=5,
+                verbose=False):
     """
     Test utility to send and receive IP packets of varying protocol types, ports, counts, etc.
     between 2 remote nodes driven by the SSH connections provided.
@@ -181,7 +182,8 @@ def packet_test(sender_ssh, receiver_ssh, protocol, dest_ip=None, src_addrs=None
     >> packet_test(ins1.ssh, ins2.ssh, , port=100, count=2, dest_ip=ins2.private_ip_address,
                    src_addrs=ins1.ip_address, bind=True)
 
-    :param sender_ssh: sshconnection object to send packets from
+    :param sender_ssh: sshconnection object to send packets from, if this is 'None' then
+                       packets will be sent from the local machine instead
     :param receiver_ssh: sshconnection object to receive packets
     :param protocol: protocol number for packets ie: 1=icmp, 6=tcp, 17=udp, 132=sctp, etc..
     :param dest_ip: Optional IP for the sender to send packets to, defaults to receiver_ssh.host
@@ -198,8 +200,9 @@ def packet_test(sender_ssh, receiver_ssh, protocol, dest_ip=None, src_addrs=None
     dest_ip = dest_ip or receiver_ssh.host
     # Make sure the connections are active
     for ssh_connection in [sender_ssh, receiver_ssh]:
-        if not ssh_connection.connection._transport.isAlive():
-            ssh_connection.refresh_connection()
+        if ssh_connection is not None:
+            if not ssh_connection.connection._transport.isAlive():
+                ssh_connection.refresh_connection()
 
     class Receiver(object):
         def __init__(self, ssh, sender, src_addrs=None, port=None, proto=None, bind=False, count=1,
@@ -249,16 +252,24 @@ def packet_test(sender_ssh, receiver_ssh, protocol, dest_ip=None, src_addrs=None
                                           timeout=timeout)
 
     class Sender(threading.Thread):
-        def __init__(self, ssh, dest_ip, proto, port=None, count=1, verbose=False):
+        def __init__(self, ssh, dest_ip, proto, port=None, srcport=None, count=1, verbose=False):
             self.ssh = ssh
             self.dest_ip = dest_ip
             self.proto = proto
             self.port = port
+            self.srcport = srcport
             self.count = count
             self.result = None
             self.done_time = None
             self.verbose = verbose
             super(Sender, self).__init__()
+
+        def debug(self, msg):
+            if self.ssh:
+                return self.ssh.debug(msg)
+            else:
+                sys.stdout.write(msg)
+                sys.stdout.flush()
 
         def packet_test_cb(self, buf, *args):
             """
@@ -270,23 +281,27 @@ def packet_test(sender_ssh, receiver_ssh, protocol, dest_ip=None, src_addrs=None
             ret.nextargs = args
             verbose = args[0]
             if verbose:
-                self.ssh.debug(buf)
+                self.debug(buf)
             return ret
 
         def run(self):
             if self.verbose:
-                self.ssh.debug('Starting Sender...\n')
-            self.result = remote_sender(ssh=self.ssh, dst_addr=self.dest_ip, proto=self.proto,
-                                        port=self.port, count=self.count, verbose=self.verbose,
-                                        cb=self.packet_test_cb, cbargs=[verbose])
+                self.debug('Starting Sender...\n')
+            if self.ssh is None:
+                send_packet(destip=self.dest_ip, proto=self.proto, dstport=self.port,
+                            count=self.count, verbose=self.verbose)
+            else:
+                self.result = remote_sender(ssh=self.ssh, dst_addr=self.dest_ip, proto=self.proto,
+                                            port=self.port, srcport=self.srcport, count=self.count,
+                                            verbose=self.verbose, cb=self.packet_test_cb,
+                                            cbargs=[verbose])
             self.done_time = time.time()
 
-    tx = Sender(ssh=sender_ssh, dest_ip=dest_ip, proto=protocol, port=port, count=count,
-                verbose=verbose)
-    rx = Receiver(ssh=receiver_ssh, src_addrs=src_addrs, port=port, proto=protocol,
-                  bind=bind, count=count,verbose=verbose, timeout=timeout, sender=tx)
+    tx = Sender(ssh=sender_ssh, dest_ip=dest_ip, proto=protocol, port=port, srcport=src_port,
+                count=count, verbose=verbose)
+    rx = Receiver(ssh=receiver_ssh, src_addrs=src_addrs, port=port, proto=protocol, bind=bind,
+                  count=count,verbose=verbose, timeout=timeout, sender=tx)
     rx.run()
-
     if not isinstance(rx.result, dict):
         raise RuntimeError('Failed to read in results dict from remote receiver, output: {0}'
                            .format(rx.result))
