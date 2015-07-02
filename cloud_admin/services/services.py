@@ -3,6 +3,7 @@ from boto.resultset import ResultSet
 from cloud_admin.services import EucaBaseObj, EucaEmpyreanResponse
 from cloud_utils.log_utils import markup, get_traceback
 from cloud_utils.net_utils.sshconnection import get_ipv4_lookup
+from datetime import datetime
 from prettytable import PrettyTable, ALL
 from operator import itemgetter
 from urlparse import urlparse
@@ -376,8 +377,9 @@ class EucaService(EucaBaseObj):
         self._localstate = None
         self._service_code = None
         self._state = None
-        self.message = None
+        self._latest_status = None
         self.name = None
+        self.statusdetails = []
         self.partition = None
         self.type = None
         self.uri = None
@@ -453,6 +455,27 @@ class EucaService(EucaBaseObj):
         if self._hostname:
             return self._hostname
         return None
+
+    @property
+    def lateststatusdetails(self):
+        if not self._latest_status:
+            latest = None
+            latest_date = None
+            for st in self.statusdetails:
+                if not isinstance(latest_date, datetime):
+                    latest = st
+                    latest_date = st.datetime
+                elif st.datetime > latest_date:
+                    latest = st
+                    latest_date = st.datetime
+            self._latest_status = latest
+        return self._latest_status
+
+    @property
+    def message(self):
+        if self.lateststatusdetails:
+            return getattr(self.lateststatusdetails, 'message', '')
+        return ''
 
     @host.setter
     def host(self, value):
@@ -576,6 +599,10 @@ class EucaService(EucaBaseObj):
         if ename == 'uris':
             self.uris = EucaUris(connection=connection)
             return self.uris
+        if ename == 'statusDetails':
+            self.statusdetails = ResultSet([('item', EucaServiceStatus),
+                                            ('euca:item', EucaServiceStatus)])
+            return self.statusdetails
 
     def endElement(self, name, value, connection):
         ename = name.replace('euca:', '')
@@ -707,6 +734,23 @@ class EucaServiceRegResponse(EucaEmpyreanResponse):
         else:
             return super(EucaServiceRegResponse, self).startElement(ename, value, connection)
 
+
+class EucaServiceStatus(EucaBaseObj):
+    '''
+    Used for parsing child service types from parent service types
+    '''
+    def __init__(self, connection=None):
+        self.datetime = None
+        super(EucaServiceStatus, self).__init__(connection)
+
+    def endElement(self, name, value, connection):
+        ename = name.lower().replace('euca:', '')
+        if ename:
+            if ename == 'severity':
+                self.name = value
+            if ename == 'timestamp':
+                self.datetime = datetime.strptime(value, "%a %b %d %H:%M:%S %Z %Y")
+            setattr(self, ename.lower(), value)
 
 class EucaServiceList(ResultSet):
     '''

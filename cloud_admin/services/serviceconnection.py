@@ -860,7 +860,9 @@ class ServiceConnection(AWSQueryConnection):
         :return: list of Eucanode objects
 \       """
 
-        services = self.get_services(service_type='node', listall=True, partition=partition,
+        services = self.get_services(service_type='node', listall=True, list_internal=False,
+                                     partition=partition, show_event_stacks=False,
+                                     show_events=True, list_user_services=False,
                                      service_class=EucaServiceList)
         nodes = []
         for service in services:
