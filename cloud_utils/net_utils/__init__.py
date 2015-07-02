@@ -166,7 +166,20 @@ def packet_test(sender_ssh, receiver_ssh, protocol, dest_ip=None, src_addrs=None
                 port=None, bind=False, count=1, payload=None, timeout=5, verbose=False):
     """
     Test utility to send and receive IP packets of varying protocol types, ports, counts, etc.
-    between 2 remote nodes driven by the SSH connections provided. 
+    between 2 remote nodes driven by the SSH connections provided.
+    Example 1) UDP test between 2 remote hosts using:
+        - the UDP protocol number 17
+        - port 101
+        - 10 packets
+    >>packet_test(ssh_tx, ssh_rx, proto=17, port=101, count=10, timeout=10, verbose=False)
+
+    Example 2) SCTP between 2 eutester Instance objects using:
+        -the SCTP protocol number 132
+        -sending to the instance's private ip address
+        -filtering on the senders ip address
+        -binding the receiver to the provided port
+    >> packet_test(ins1.ssh, ins2.ssh, , port=100, count=2, dest_ip=ins2.private_ip_address,
+                   src_addrs=ins1.ip_address, bind=True)
 
     :param sender_ssh: sshconnection object to send packets from
     :param receiver_ssh: sshconnection object to receive packets
@@ -212,7 +225,6 @@ def packet_test(sender_ssh, receiver_ssh, protocol, dest_ip=None, src_addrs=None
             """
             ret = SshCbReturn()
             ret.buf = buf
-            # ret.removecb = True
             ret.nextargs = args
             sender = args[0]
             if re.search(START_MESSAGE, buf):

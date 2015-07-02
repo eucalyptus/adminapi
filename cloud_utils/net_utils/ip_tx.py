@@ -23,9 +23,6 @@ def get_script_path():
         import inspect
     except ImportError:
         return None
-    # print os.path.abspath(inspect.stack()[0][1])
-    # print inspect.getfile(inspect.currentframe())
-    # print os.path.realpath(inspect.getfile(inspect.currentframe()))
     return abspath (inspect.stack()[0][1])
 
 
