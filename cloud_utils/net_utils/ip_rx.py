@@ -104,14 +104,22 @@ START_MESSAGE = 'Begin Capture'
 
 
 def get_script_path():
+    """
+    Returns the path to this script
+    """
     try:
         import inspect
     except ImportError:
         return None
-    return abspath (inspect.stack()[0][1])
+    return abspath(inspect.stack()[0][1])
 
 
 def sftp_file(sshconnection, verbose_level=DEBUG):
+    """
+    Uploads this script using the sshconnection's sftp interface to the sshconnection host.
+    :param sshconnection: SshConnection object
+    :param verbose_level: The level at which this method should log it's output.
+    """
     script_path = get_script_path()
     script_name = basename(script_path)
     sshconnection.sftp_put(script_path, script_name)
@@ -119,12 +127,34 @@ def sftp_file(sshconnection, verbose_level=DEBUG):
           verbose_level)
     return script_name
 
+
 def print_help():
     p = get_option_parser()
     p.print_help()
 
+
 def remote_receiver(ssh, src_addrs=None, proto=17, dst_addrs=None, port=None,
                     count=30, bind=False, timeout=15, cb=None, cbargs=None, verbose_level=DEBUG):
+    """
+    Uses the ssh SshConnection obj's sftp interface to transfer this script to the remote
+    machine and execute it with the parameters provided. Will return a json dict of the
+    packets received from the remote sshconnection's host.
+
+    :param ssh: SshConnetion object
+    :param src_addrs: Single or list of source addresses used to filter packets
+    :param proto: IP protocol number, defaults to 17 for UDP
+    :param dst_addrs: Destination address used when filtering packets
+    :param port: Destination port used when filtering packets
+    :param count: Number of packets to capture before returning
+    :param bind: Bool, if True will attempt to bind to the provided 'port'
+    :param timeout: Time to allow for for packet capture
+    :param cb: A method/function to be used as a call back to handle the ssh command's output
+               as it is received. Must return type sshconnection.SshCbReturn
+    :param cbargs: list of args to be provided to callback cb.
+    :param verbose_level: Level used for writing debug information
+    :return: json dict of results
+    :raise RuntimeError: If remote command returns a status != 0
+    """
     script = sftp_file(ssh, verbose_level=verbose_level)
     cmd = "python {0} -o {1} -c {2} -v{3} ".format(script, proto, count, verbose_level)
     if src_addrs:
@@ -151,8 +181,7 @@ def remote_receiver(ssh, src_addrs=None, proto=17, dst_addrs=None, port=None,
                 lines += line + '\n'
         jout = json.loads(lines)
     except Exception as JE:
-        jout =  '{0}\nJSON loads failed, error:{1}'.format(lines, JE)
-        #raise
+        jout = '{0}\nJSON loads failed, error:{1}'.format(lines, JE)
     return jout
 
 
@@ -182,6 +211,7 @@ def get_proto_name(number):
         if proto.startswith('IPPROTO_') and value == number:
             return str(proto).replace('IPPROTO_', '')
     return str(number)
+
 
 def get_option_parser():
     parser = OptionParser()
@@ -232,11 +262,9 @@ def get_option_parser():
     return parser
 
 
-
 ##################################################################################################
 #                                           IP HEADER
 ##################################################################################################
-
 
 class IPHdr(object):
     def __init__(self, packet):
@@ -326,7 +354,7 @@ if __name__ == "__main__":
                'protocol': PROTO,
                'elapsed': None,
                'count': None,
-               'name': options.testname ,
+               'name': options.testname,
                'error': '',
                'date': str(time.asctime())}
 
