@@ -152,12 +152,12 @@ def is_address_in_network(ip_addr, network):
         ip_addr = str(ip_addr)
         network = str(network)
         # Check for 0.0.0.0/0 network first...
-        rem_zero = network.replace('0','')
+        rem_zero = network.replace('0', '')
         if not re.search('\d', rem_zero):
             return True
-        ipaddr = int(''.join([ '%02x' % int(x) for x in ip_addr.split('.') ]), 16)
+        ipaddr = int(''.join(['%02x' % int(x) for x in ip_addr.split('.')]), 16)
         netstr, bits = network.split('/')
-        netaddr = int(''.join([ '%02x' % int(x) for x in netstr.split('.') ]), 16)
+        netaddr = int(''.join(['%02x' % int(x) for x in netstr.split('.')]), 16)
         mask = (0xffffffff << (32 - int(bits))) & 0xffffffff
         return (ipaddr & mask) == (netaddr & mask)
 
@@ -300,7 +300,7 @@ def packet_test(sender_ssh, receiver_ssh, protocol, dest_ip=None, src_addrs=None
     tx = Sender(ssh=sender_ssh, dest_ip=dest_ip, proto=protocol, port=port, srcport=src_port,
                 count=count, verbose=verbose)
     rx = Receiver(ssh=receiver_ssh, src_addrs=src_addrs, port=port, proto=protocol, bind=bind,
-                  count=count,verbose=verbose, timeout=timeout, sender=tx)
+                  count=count, verbose=verbose, timeout=timeout, sender=tx)
     rx.run()
     if not isinstance(rx.result, dict):
         raise RuntimeError('Failed to read in results dict from remote receiver, output: {0}'
@@ -308,4 +308,3 @@ def packet_test(sender_ssh, receiver_ssh, protocol, dest_ip=None, src_addrs=None
     if verbose:
         json.dumps(rx.result, sort_keys=True, indent=4)
     return rx.result
-

@@ -10,7 +10,6 @@ from random import getrandbits
 import array
 import socket
 import struct
-import time
 import sys
 from optparse import OptionParser, OptionValueError
 # ICMP TYPES
