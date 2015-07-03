@@ -1,16 +1,26 @@
 #!/usr/bin/python
 """
-Simple packet generator/client test tool
+Simple IP packet generator/client test tool.
+Provides very limited support for testing specific IP protocols. Primarily used to test
+specific network paths in a cloud or data center traversing firewalls/security groups, nat points,
+etc..
 """
 from os.path import abspath, basename
 from random import getrandbits
+import array
 import socket
 import struct
 import time
 import sys
 from optparse import OptionParser, OptionValueError
+# ICMP TYPES
 ICMP_ECHO_REQUEST = 8
 ICMP_EHCO_REPLY = 0
+# SCTP TYPES
+CHUNK_DATA = 0
+CHUNK_INIT = 1
+CHUNK_HEARTBEAT = 3
+# DEBUG LEVELS
 TRACE = 3
 DEBUG = 2
 INFO = 1
@@ -19,20 +29,29 @@ VERBOSE_LVL = INFO
 
 
 def get_script_path():
+    """
+    Returns the path to this script
+    """
     try:
         import inspect
     except ImportError:
         return None
-    return abspath (inspect.stack()[0][1])
+    return abspath(inspect.stack()[0][1])
 
 
 def sftp_file(sshconnection, verbose_level=DEBUG):
+    """
+    Uploads this script using the sshconnection's sftp interface to the sshconnection host.
+    :param sshconnection: SshConnection object
+    :param verbose_level: The level at which this method should log it's output.
+    """
     script_path = get_script_path()
     script_name = basename(script_path)
     sshconnection.sftp_put(script_path, script_name)
     debug('Done Copying script:"{0}" to "{1}"'.format(script_name, sshconnection.host),
           verbose_level)
     return script_name
+
 
 def debug(msg, level=DEBUG):
     """
@@ -51,6 +70,12 @@ def debug(msg, level=DEBUG):
 
 
 def get_src(dest):
+    """
+    Attempts to learn the source IP from the outbound interface used to reach the provided
+    destination
+    :param dest: destination address/ip
+    :return: local ip
+    """
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     s.connect((dest, 1))
     source_ip = s.getsockname()[0]
@@ -60,6 +85,25 @@ def get_src(dest):
 
 def remote_sender(ssh, dst_addr, port=None, srcport=None, proto=17, count=1, timeout=15, data=None,
                   verbose=False, cb=None, cbargs=None):
+    """
+    Uses the ssh SshConnection obj's sftp interface to transfer this script to the remote
+    machine and execute it with the parameters provided. Will return the combined stdout & stderr
+    of the remote session.
+
+    :param ssh: SshConnection object to run this script
+    :param dst_addr: Where to send packets to
+    :param port: The destination port of the packets (depending on protocol support)
+    :param srcport: The source port to use in the sent packets
+    :param proto: The IP protocol number (ie: 1=icmp, 6=tcp, 17=udp, 132=sctp)
+    :param count: The number of packets to send
+    :param timeout: The max amount of time allowed for the remote command to execute
+    :param data: Optional data to append to the built packet(s)
+    :param verbose: Boolean to enable/disable printing of debug info
+    :param cb: A method/function to be used as a call back to handle the ssh command's output
+               as it is received. Must return type sshconnection.SshCbReturn
+    :param cbargs: list of args to be provided to callback cb.
+    :return: :raise RuntimeError: If remote command return status != 0
+    """
     if verbose:
         verbose_level = VERBOSE_LVL
     else:
@@ -77,7 +121,7 @@ def remote_sender(ssh, dst_addr, port=None, srcport=None, proto=17, count=1, tim
     out = ""
     debug("CMD: {0}".format(cmd), verbose_level)
     cmddict = ssh.cmd(cmd, listformat=False, timeout=timeout, cb=cb, cbargs=cbargs,
-                       verbose=verbose)
+                      verbose=verbose)
     out += cmddict.get('output')
     if cmddict.get('status') != 0:
         raise RuntimeError('{0}\n"{1}" cmd failed with status:{2}, on host:{3}'
@@ -86,7 +130,13 @@ def remote_sender(ssh, dst_addr, port=None, srcport=None, proto=17, count=1, tim
     return out
 
 
-def send_ip_packet(destip, proto=132, payload=None):
+def send_ip_packet(destip, proto=4, payload=None):
+    """
+    Send a raw ip packet, payload can be used to append to the IP header...
+    :param destip: Destination ip
+    :param proto: protocol to use, default is 4
+    :param payload: optional string buffer to append to IP packet
+    """
     s = None
     if payload is None:
             payload = 'IP TEST PACKET'
@@ -102,15 +152,29 @@ def send_ip_packet(destip, proto=132, payload=None):
         if s:
             s.close()
 
+
 def send_sctp_packet(destip, dstport=101, srcport=100, proto=132, ptype=None, payload=None,
                      sctpobj=None):
+    """
+    Send Basic SCTP packets
+
+    :param destip: Destination IP to send SCTP packet to
+    :param dstport: Destination port to use in the SCTP packet
+    :param srcport: Source port to use in the SCTP packet
+    :param proto: Protocol number to use, default is 132 for SCTP
+    :param ptype: SCTP type, default is 'init' type
+    :param payload: optional payload to use in packets (ie data chunk payload)
+    :param sctpobj: A pre-built sctpobj to be sent
+    """
     s = None
     if payload is None:
             payload = 'SCTP TEST PACKET'
     payload = payload or ""
+    if ptype is None:
+        ptype = CHUNK_INIT
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_RAW, proto)
-        s.setsockopt(socket.SOL_IP, socket.IP_TOS, 0x02) #  set ecn bit
+        s.setsockopt(socket.SOL_IP, socket.IP_TOS, 0x02)  # set ecn bit
         if not sctpobj:
             sctpobj = SCTP(srcport=srcport, dstport=dstport, ptype=ptype, payload=payload)
         s.sendto(sctpobj.pack(), (destip, dstport))
@@ -124,6 +188,16 @@ def send_sctp_packet(destip, dstport=101, srcport=100, proto=132, ptype=None, pa
 
 
 def send_udp_packet(destip, srcport=None, dstport=101, proto=17, payload=None):
+    """
+    Send basic UDP packet
+
+    :param destip: Destination IP to send UDP packet
+    :param srcport: source port to use in the UDP packet, if provided will attempt to bind
+                    to this port
+    :param dstport: destination port to use in the UDP packet
+    :param proto: protocol number, default is 17 for UDP
+    :param payload: optional payload for this packet
+    """
     s = None
     if payload is None:
             payload = 'UDP TEST PACKET'
@@ -141,7 +215,20 @@ def send_udp_packet(destip, srcport=None, dstport=101, proto=17, payload=None):
         if s:
             s.close()
 
+
 def send_tcp_packet(destip, dstport=101, srcport=None, proto=6, payload=None, bufsize=4096):
+    """
+    Send basic TCP packet
+
+    :param destip: Destination IP to send TCP packet
+    :param dstport: destination port to use in this TCP packet
+    :param srcport: source port to use in this TCP packet. If provided will attempt to bind
+                    to this port
+    :param proto: protocol number, default is 6 for TCP
+    :param payload: optional payload for this packet
+    :param bufsize: Buffer size for recv() on socket after sending packet
+    :return: Any data read on socket after sending the packet
+    """
     s = None
     if payload is None:
             payload = 'TCP TEST PACKET'
@@ -157,20 +244,31 @@ def send_tcp_packet(destip, dstport=101, srcport=None, proto=6, payload=None, bu
         if SE.errno == 1 and 'not permitted' in SE.strerror:
             sys.stderr.write('Permission error creating socket, try with sudo, root...?\n')
         raise
-
     finally:
         if s:
             s.close()
     return data
 
+
 def send_icmp_packet(destip, id=1234, seqnum=1, code=0, proto=1, ptype=None,
                      payload='ICMP TEST PACKET'):
+    """
+    Send basic ICMP packet (note: does not wait for, or validate a response)
+
+    :param destip: Destination IP to send ICMP packet to
+    :param id: ID, defaults to '1234'
+    :param seqnum: Sequence number, defaults to '1'
+    :param code: ICMP subtype, default to 0
+    :param proto: protocol number, defaults to 1 for ICMP
+    :param ptype: ICMP type, defaults to icmp echo request
+    :param payload: optional payload
+    """
     if payload is None:
             payload = 'ICMP TEST PACKET'
     payload = payload or ""
     s = None
     if ptype is None:
-        ptype=ICMP_ECHO_REQUEST
+        ptype = ICMP_ECHO_REQUEST
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_RAW, proto)
         icmp = ICMP(destaddr=destip, id=id, seqnum=seqnum, code=code, ptype=ptype, payload=payload)
@@ -183,12 +281,23 @@ def send_icmp_packet(destip, id=1234, seqnum=1, code=0, proto=1, ptype=None,
         if s:
             s.close()
 
+
 def send_packet(destip, proto, srcport=100, dstport=345, ptype=None, payload=None, count=1,
                 verbose=DEBUG):
-
+    """
+    Wrapper to sends packets of varying types
+    :param destip: Destination IP to send packet to
+    :param proto: IP protocol number (ie:1=icmp, 6=tcp, 17=udp, 132=sctp)
+    :param srcport: Source port to use in packet (Depends on protocol)
+    :param dstport: Destination port to use in packet (Depends on protocol)
+    :param ptype: Packet type (if protocol supports subtypes)
+    :param payload: Optional payload to send with packet
+    :param count: Number of packets to send
+    :param verbose: Sets the level info will be logged at
+    """
     for x in xrange(0, count):
         debug('send_packet: destip:{0}, dstport:{1}, proto:{2}, ptype:{3}'
-          .format(destip, dstport, proto, ptype))
+              .format(destip, dstport, proto, ptype), level=verbose)
         if proto in [1, 'icmp']:
             send_icmp_packet(destip=destip, ptype=ptype, payload=payload)
         elif proto in [6, 'tcp']:
@@ -201,8 +310,12 @@ def send_packet(destip, proto, srcport=100, dstport=345, ptype=None, payload=Non
         else:
             send_ip_packet(destip=destip, proto=proto, payload=payload)
 
-class ICMP(object):
 
+###################################################################################################
+#                                   ICMP PACKET BUILDERS
+###################################################################################################
+
+class ICMP(object):
     def __init__(self, destaddr, id=1234, seqnum=1, code=0, ptype=None,
                  payload=None):
 
@@ -225,13 +338,17 @@ class ICMP(object):
         return packet
 
 
+###################################################################################################
+#                                   SCTP PACKET BUILDERS
+###################################################################################################
+
 class InitChunk(object):
     def __init__(self, tag=None, a_rwnd=62464, outstreams=10, instreams=65535, tsn=None,
                  param_data=None):
         self.tag = tag or getrandbits(32) or 3
         self.a_rwnd = a_rwnd
-        self.outstreams = outstreams or 1 # 0 is invalid
-        self.instreams = instreams or 1 # 0 is invalid
+        self.outstreams = outstreams or 1  # 0 is invalid
+        self.instreams = instreams or 1  # 0 is invalid
         self.tsn = tsn or getrandbits(32) or 4
         if param_data is None:
             param_data = ""
@@ -250,6 +367,7 @@ class InitChunk(object):
             packet += self.param_data
         return packet
 
+
 class SctpIPv4Param(object):
     def __init__(self, type=5, length=8, ipv4addr=None):
         self.type = type
@@ -259,6 +377,7 @@ class SctpIPv4Param(object):
     def pack(self):
         packet = struct.pack('!HHI', self.type, self.length, self.addr)
         return packet
+
 
 class SctpSupportedAddrTypesParam(object):
     def __init__(self, ptype=12, addr_types=None):
@@ -285,6 +404,7 @@ class SctpSupportedAddrTypesParam(object):
         if len(self.addr_types) % 2:
             packet += struct.pack("H", 0)
         return packet
+
 
 class SctpEcnParam(object):
     def __init__(self, ptype=32768):
@@ -391,15 +511,12 @@ class SCTP(object):
     # E - If set, this marks the end fragment. An unfragmented chunk has this flag set
     """
     def __init__(self, srcport, dstport, tag=None, ptype=None, payload=None, chunk=None):
-        chunk_data = 0
-        chunk_init = 1
-        chunk_heartbeat = 3
         self.src = srcport
         self.dst = dstport
         self.checksum = 0
         if ptype is None:
-            ptype = chunk_init
-            tag = 0 #  Verification tag is set to 0 for init
+            ptype = CHUNK_INIT
+            tag = 0  # Verification tag is set to 0 for init
         if tag is None:
             tag = getrandbits(16)
         self.tag = tag
@@ -444,11 +561,11 @@ def checksum(source_string):
     while count < count_to:
         this_val = ord(source_string[count + 1])*256+ord(source_string[count])
         sum = sum + this_val
-        sum = sum & 0xffffffff # Necessary?
+        sum = sum & 0xffffffff  # Necessary?
         count = count + 2
     if count_to < len(source_string):
         sum = sum + ord(source_string[len(source_string) - 1])
-        sum = sum & 0xffffffff # Necessary?
+        sum = sum & 0xffffffff  # Necessary?
     sum = (sum >> 16) + (sum & 0xffff)
     sum = sum + (sum >> 16)
     answer = ~sum
@@ -456,11 +573,6 @@ def checksum(source_string):
     # Swap bytes. Bugger me if I know why.
     answer = answer >> 8 | (answer << 8 & 0xff00)
     return answer
-
-###################################################################################################
-#  End of checksum()
-###################################################################################################
-
 
 
 ###################################################################################################
@@ -496,9 +608,6 @@ def checksum(source_string):
 #   OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 #   ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #  """
-
-import array
-
 # CRC-32C Checksum
 # http://tools.ietf.org/html/rfc3309
 
@@ -557,11 +666,13 @@ crc32c_table = (
     0xAD7D5351L
     )
 
+
 def add(crc, buf):
     buf = array.array('B', buf)
     for b in buf:
         crc = (crc >> 8) ^ crc32c_table[(crc ^ b) & 0xff]
     return crc
+
 
 def done(crc):
     tmp = ~crc & 0xffffffffL
@@ -572,13 +683,14 @@ def done(crc):
     crc = (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
     return crc
 
+
 def cksum(buf):
     """Return computed CRC-32c checksum."""
     return done(add(0xffffffffL, buf))
-
 ###################################################################################################
 # end of borrowed crc32c for python
 ###################################################################################################
+
 
 if __name__ == "__main__":
 
