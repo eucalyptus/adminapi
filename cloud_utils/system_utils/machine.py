@@ -182,13 +182,13 @@ class Machine(object):
         :returns string buf containing the dumped network info.
         """
 
-        buf = ('Attempting to dump network information, args: ip:' + str(ip)
-               + ' mac:' + str(mac)
-               + ' pass1:' + self.get_masked_pass(pass1, show=showpass)
-               + ' pass2:' + self.get_masked_pass(pass2, show=showpass))
+        buf = ('Attempting to dump network information, args: ip:' + str(ip) +
+               ' mac:' + str(mac) +
+               ' pass1:' + self.get_masked_pass(pass1, show=showpass) +
+               ' pass2:' + self.get_masked_pass(pass2, show=showpass))
         if ip:
             try:
-                out = self.ping_cmd(ip, verbose=False, net_namespace=net_namespace,count=1)
+                out = self.ping_cmd(ip, verbose=False, net_namespace=net_namespace, count=1)
                 buf += out.get('output', None)
             except Exception as PE:
                 buf += 'Ping cmd failed, err:"{0}"'.format(PE)
@@ -196,7 +196,7 @@ class Machine(object):
             try:
                 ns_list = self.sys('ip netns list')
                 if ns_list:
-                    buf +=  "\n"
+                    buf += "\n"
                     buf += "\n".join(str(x) for x in ns_list)
                 if net_namespace in ns_list:
                     self.sys('arp -a', net_namespace=net_namespace)
@@ -213,7 +213,6 @@ class Machine(object):
             if logger:
                 logger(buf)
         return buf
-
 
     def get_masked_pass(self, pwd, firstlast=True, charcount=True, show=False):
         '''
@@ -382,7 +381,8 @@ class Machine(object):
         '''
         if net_namespace is not None:
             cmd = 'ip netns exec {0} {1}'.format(net_namespace, cmd)
-        return self.ssh.sys(cmd, verbose=verbose, timeout=timeout,listformat=listformat, code=code)
+        return self.ssh.sys(cmd, verbose=verbose, timeout=timeout, listformat=listformat,
+                            code=code)
 
     def cmd(self, cmd, verbose=True, timeout=120, listformat=False, net_namespace=None,
             cb=None, cbargs=[]):
@@ -514,7 +514,7 @@ class Machine(object):
         finally:
             return ret
 
-    def ping_check(self,host, verbose=True, net_namespace=None):
+    def ping_check(self, host, verbose=True, net_namespace=None):
         """
         Wrapper for ICMP ping requests/checks.
         :param host: remote host to ping from this machine obj
@@ -545,18 +545,18 @@ class Machine(object):
         :param net_namespace: the Linux network namespace on this machine obj to run ping from.
         :return: the response from the ping command(s)
         """
-        cmd = 'ping -c ' +str(count)+' -t '+str(pingtimeout)
+        cmd = 'ping -c ' + str(count) + ' -t ' + str(pingtimeout)
         if verbose:
             cmd += ' -v '
-        cmd = cmd + ' '+ str(host)
+        cmd = cmd + ' ' + str(host)
         self.debug('cmd: {0}'.format(cmd))
         out = self.cmd(cmd, verbose=verbose, timeout=commandtimeout, listformat=listformat,
                        net_namespace=net_namespace)
         self.debug('out: {0}'.format(out))
         if verbose:
-            #print all returned attributes from ping command dict
+            # print all returned attributes from ping command dict
             for item in sorted(out):
-                self.debug(str(item)+" = "+str(out[item]) )
+                self.debug(str(item) + " = " + str(out[item]))
         return out
 
     ###############################################################################################
@@ -569,13 +569,11 @@ class Machine(object):
         # results are cached for '_sys_stats_interval' seconds.
         # to force an update set '_free_stats' to None before fetching.
         if not self._free_stats.get('stats', None) or \
-        (time.time() - self._free_stats.get('last_updated', 0) > self._sys_stats_interval):
+                (time.time() - self._free_stats.get('last_updated', 0) > self._sys_stats_interval):
             header = []
 
             def newstats(total, used, free):
-                return  {'total': total,
-                          'used': used,
-                          'free': free}
+                return {'total': total, 'used': used, 'free': free}
 
             free_stats = {}
             try:
@@ -723,7 +721,6 @@ class Machine(object):
             print_method("\n{0}\n".format(sys_pt))
         return sys_pt
 
-
     ###############################################################################################
     #                               Process Utils                                                 #
     ###############################################################################################
@@ -734,16 +731,16 @@ class Machine(object):
         # results are cached for '_sys_stats_interval' seconds.
         # to force an update set '_cpu_stats' to None before fetching.
         if not self._cpu_stats.get('stats', None) or \
-        (time.time() - self._cpu_stats.get('last_updated', 0) > self._sys_stats_interval):
+                (time.time() - self._cpu_stats.get('last_updated', 0) > self._sys_stats_interval):
             header = []
 
             def newstats(usr, nice, sys, iowait, idle):
-                return  {'usr': usr,
-                         'nice': nice,
-                         'sys': sys,
-                         'iowait': iowait,
-                         'idle': idle,
-                         'used': 100 - float(idle)}
+                return {'usr': usr,
+                        'nice': nice,
+                        'sys': sys,
+                        'iowait': iowait,
+                        'idle': idle,
+                        'used': 100 - float(idle)}
 
             cpu_stats = {}
             try:
@@ -831,7 +828,7 @@ class Machine(object):
     def get_pid_info(self, pid, ps_cols=None):
         ret = {}
         ps_cols = ps_cols or ['etime', 'pcpu', 'pmem']
-        if not 'comm' in ps_cols:
+        if 'comm' not in ps_cols:
             ps_cols.append('comm')
         try:
             out = self.sys('ps -p {0} --ppid {0} -o {1}'.format(pid, ",".join(ps_cols)), code=0)
