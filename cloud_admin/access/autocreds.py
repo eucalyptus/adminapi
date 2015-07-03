@@ -205,8 +205,8 @@ class AutoCreds(Eucarc):
     def _connect_services(self):
         if self.aws_secret_key and self.aws_access_key and self._clc_ip:
             self._serviceconnection = ServiceConnection(hostname=self._clc_ip,
-                                      aws_access_key=self.aws_access_key,
-                                      aws_secret_key=self.aws_secret_key)
+                                                        aws_access_key=self.aws_access_key,
+                                                        aws_secret_key=self.aws_secret_key)
         return self._serviceconnection
 
     def _close_adminpi(self):
@@ -227,8 +227,8 @@ class AutoCreds(Eucarc):
         :returns dict mapping eucarc common key-values to the discovered service URIs.
         """
         if not self.serviceconnection:
-            raise RuntimeError('Can not fetch service paths from cloud without an ServiceConnection '
-                               'connection\n This requires: clc_ip, aws_access_key, '
+            raise RuntimeError('Can not fetch service paths from cloud without an '
+                               'ServiceConnection\n This requires: clc_ip, aws_access_key, '
                                'aws_secret_key')
         path_dict = self._get_service_paths_from_serviceconnection(self.serviceconnection)
         if not path_dict.get('ec2_access_key'):
@@ -376,7 +376,6 @@ class AutoCreds(Eucarc):
                     except RuntimeError as RE:
                         self.debug('{0}\nFailed to fetch creds from clc db, err:{1}'
                                    .format(get_traceback(), str(RE)))
-
 
         default_order = [try_local, try_serviceconnection, try_remote, try_clc_db]
         if self._clc_ip and self._credpath and self._has_updated_connect_args:

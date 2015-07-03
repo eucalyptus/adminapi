@@ -34,8 +34,8 @@ class AccessConnection(IAMConnection):
         if creds:
             self.user_id = creds.ec2_user_id
             self.account_id = creds.ec2_account_number
-            assert isinstance(creds, Eucarc), 'UserAdmin. eucarc not of type Eucarc(), ' \
-                                               'got:"{0}/{1}"'.format(creds, type(creds))
+            assert isinstance(creds, Eucarc), 'UserAdmin. eucarc not type Eucarc(), got:"{0}/{1}"'\
+                .format(creds, type(creds))
             urlp = urlparse(creds.euare_url)
             host = host or getattr(urlp, 'hostname', None)
             port = port or getattr(urlp, 'port', 8773)
@@ -74,7 +74,7 @@ class AccessConnection(IAMConnection):
         else:
             re_meth = re.match
         self.log.debug('Attempting to fetch all accounts matching- account_id:{0} account_name:{1}'
-                   .format(str(account_id), str(account_name)))
+                       .format(str(account_id), str(account_name)))
         params = {}
         accounts = self.get_list(action='ListAccounts',
                                  params=params,
@@ -226,7 +226,7 @@ class AccessConnection(IAMConnection):
             account = self.get_account(self.account_id)
 
     def show_all_accounts(self, account=None, account_name=None, account_id=None, search=False,
-                          print_method = None, print_table=True):
+                          print_method=None, print_table=True):
         """
         Debug Method to print an account list based on given filter criteria
 

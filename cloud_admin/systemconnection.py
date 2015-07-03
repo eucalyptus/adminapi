@@ -60,10 +60,10 @@ class SystemConnection(ServiceConnection):
                                logger=self.log,
                                **self.clc_connect_kwargs)
         super(SystemConnection, self).__init__(hostname=hostname,
-                                                aws_secret_key=self.creds.aws_secret_key,
-                                                aws_access_key=self.creds.aws_access_key,
-                                                logger=self.log,
-                                                boto_debug_level=boto_debug_level)
+                                               aws_secret_key=self.creds.aws_secret_key,
+                                               aws_access_key=self.creds.aws_access_key,
+                                               logger=self.log,
+                                               boto_debug_level=boto_debug_level)
 
     def set_loglevel(self, level, parent=False):
         """
@@ -116,7 +116,7 @@ class SystemConnection(ServiceConnection):
                 self._eucahosts[ip] = host
         threads = []
         for ip, services in machines.iteritems():
-            t = threading.Thread(target=add_host, args=(ip,services))
+            t = threading.Thread(target=add_host, args=(ip, services))
             t.start()
             threads.append(t)
             # self._eucahosts[ip] = EucaHost(connection=self, hostname=ip, services=services,
@@ -237,9 +237,8 @@ class SystemConnection(ServiceConnection):
             return [1, 92]
         return [1, 93]
 
-    def show_hosts(self, hosts=None, partition=None, service_type=None,
-                              serv_columns=None, update=True, print_method=None,
-                              print_table=True):
+    def show_hosts(self, hosts=None, partition=None, service_type=None, serv_columns=None,
+                   update=True, print_method=None, print_table=True):
         print_method = print_method or self._show_method
         ins_id_len = 10
         ins_type_len = 13
@@ -256,7 +255,7 @@ class SystemConnection(ServiceConnection):
         total = []
         eucahosts = {}
         if hosts is None:
-             eucahosts = self.eucahosts
+            eucahosts = self.eucahosts
         elif isinstance(hosts, list):
             for host in hosts:
                 eucahosts[host.hostname] = host
@@ -290,6 +289,7 @@ class SystemConnection(ServiceConnection):
         # Now build the machine table...
         threads = []
         hostlock = threading.Lock()
+
         # Method to allow host info to be gathered concurrently
         def add_host(hostip, host, self=self):
             assert isinstance(host, EucaHost)
@@ -332,7 +332,7 @@ class SystemConnection(ServiceConnection):
                                                x.instance_type,
                                                x.root_device_type])
                             servbuf += "{0}\n".format(vm_pt)
-                    av_pt =  host.helpers.node_controller.show_availability_for_node(
+                    av_pt = host.helpers.node_controller.show_availability_for_node(
                         print_table=False)
                     servbuf += av_pt.get_string()
             ps_sum_pt = host.show_euca_process_summary(print_table=False)
@@ -346,7 +346,8 @@ class SystemConnection(ServiceConnection):
             host_info += "{0}".format(sys_pt)
             with hostlock:
                 pt.add_row([markup("HOST:") + markup(hostip, [1, 94]),
-                            markup('EUCALYPTUS SERVICES:') + markup('[ {0} ]'
+                            markup('EUCALYPTUS SERVICES:') +
+                            markup('[ {0} ]'
                                    .format(" ".join(str(x) for x in host.euca_service_codes)),
                                    [1, 34])])
                 pt.add_row([host_info, servbuf])
@@ -358,11 +359,10 @@ class SystemConnection(ServiceConnection):
         for t in threads:
             t.join()
         if print_table:
-            #print_method("\n{0}\n".format(pt.get_string(sortby=pt.field_names[1])))
+            # print_method("\n{0}\n".format(pt.get_string(sortby=pt.field_names[1])))
             print_method("\n{0}\n".format(pt.get_string()))
         else:
             return pt
-
 
     def build_machine_dict_from_config(cls):
         raise NotImplementedError()

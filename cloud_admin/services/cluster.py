@@ -15,6 +15,7 @@ def show_cluster(connection, cluster, printmethod=None, print_table=True):
     else:
         return maintpt
 
+
 class Cluster(object):
     def __init__(self, connection, name):
         """

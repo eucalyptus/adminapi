@@ -186,7 +186,6 @@ class ConfigBlock(Namespace):
         diff = difflib.unified_diff(text2, text1, lineterm='')
         return str('\n'.join(diff))
 
-
     def save(self, path=None):
         """
         Will write the json configuration to a file at path or by default at

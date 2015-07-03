@@ -23,7 +23,7 @@ def SHOW_PROPERTIES(connection, properties=None, description=True, defaults=True
     """
     print_method = print_method or connection._show_method
     name_hdr = markup('PROPERTY NAME', [1, 94])
-    def_hdr = markup('DEFAULT', [1,94])
+    def_hdr = markup('DEFAULT', [1, 94])
     value_hdr = markup('PROPERTY VALUE', [1, 94])
     desc_hdr = markup('DESCRIPTION', [1, 94])
     ro_hdr = markup('RO', [1, 94])

@@ -193,8 +193,8 @@ class Midget(object):
         net_namespace = net_namespace or instance.vpc_id
 
         out = proxy_machine.ping_check(instance.private_ip_address,
-                                     net_namespace=net_namespace,
-                                     verbose=verbose)
+                                       net_namespace=net_namespace,
+                                       verbose=verbose)
         status = out.get('status', None)
         if status == 0:
             statusmsg = 'Success(0)'
@@ -202,8 +202,9 @@ class Midget(object):
             statusmsg = 'Failed({0})'.format(status)
         self.info('\nCmd:"{0}", output:\n{1}\n{2} pinging instance: {3},  private ip:{4} '
                   'from internal host: {5}'.format(out.get('cmd', None), out.get('output', None),
-                                           statusmsg, instance.id, instance.private_ip_address,
-                                           proxy_machine.hostname))
+                                                   statusmsg, instance.id,
+                                                   instance.private_ip_address,
+                                                   proxy_machine.hostname))
         return status
 
     def dump_euca_gateway_info_for_instance(self, instance, proxy_machine=None,
@@ -250,10 +251,10 @@ class Midget(object):
                             continue
                     except:
                         self.info('Error while evaluating -> {0}("{1}","{2}")'
-                                   .format("{0}.{1}".format(getattr(eval_op, "__module__", ""),
-                                                            getattr(eval_op, "__name__", "")),
-                                           str(search_dict[key]),
-                                           str(getattr(router, key))))
+                                  .format("{0}.{1}".format(getattr(eval_op, "__module__", ""),
+                                                           getattr(eval_op, "__name__", "")),
+                                          str(search_dict[key]),
+                                          str(getattr(router, key))))
                         raise
                 remove_list.append(router)
             for router in remove_list:
@@ -425,8 +426,8 @@ class Midget(object):
         router = self.get_router_for_instance(instance)
         if not router:
             raise ValueError('Did not find router for instance:{0}'.format(instance.id))
-        subnet = self.eucaconnection.ec2_connection.get_all_subnets(subnet_ids=['verbose',
-                                                                                instance.subnet_id])[0]
+        subnet = self.eucaconnection.ec2_connection.get_all_subnets(
+            subnet_ids=['verbose', instance.subnet_id])[0]
         if not subnet:
             raise ValueError('Did not find subnet for instance:{0}, subnet id:{1}'
                              .format(instance.id, instance.subnet_id))
@@ -747,7 +748,7 @@ class Midget(object):
                     portid = m_entry.get_port_id()
                     return self.mapi.get_port(portid)
             self.info('ARP entry for instance found, but mac has not been learned on a port yet, '
-                       'try pinging it?   ')
+                      'try pinging it?   ')
         return None
 
     def get_bridge_port_for_instance_by_port_name(self, instance):
@@ -900,11 +901,11 @@ class Midget(object):
                 if port >= start_port and port <= end_port:
                     if rule_cidr == "0.0.0.0/0" or is_address_in_network(src_addr, rule_cidr):
                         self.info('Found rule which allows src_addr:"{0}", protocol:"{1}", '
-                                   'port:"{2}"'.format(src_addr, protocol, port))
+                                  'port:"{2}"'.format(src_addr, protocol, port))
                         self.show_rules(rules=[rule])
                         return True
         self.info('Chain does not allow: src_addr:"{0}", protocol:"{1}", port:"{2}"'
-                   .format(src_addr, protocol, port))
+                  .format(src_addr, protocol, port))
         return False
 
     def get_unsynced_rules_for_security_group(self, group, show_rules=True):
@@ -914,7 +915,7 @@ class Midget(object):
             if not self.get_security_group_rule_mapping_from_backend(group, rule):
                 unsynced_rules.append(rule)
         self.info('{0} unsynced rules out of {1} total rules found for group:"{2}"'
-                   .format(len(unsynced_rules), len(group.rules), group.name))
+                  .format(len(unsynced_rules), len(group.rules), group.name))
         if unsynced_rules and show_rules:
             title = markup('The following rules for group:"{0}" were not found) on '
                            'backend'.format(group.name), [1, 91, 7])
@@ -935,7 +936,7 @@ class Midget(object):
             unsynced_rules.extend(self.get_unsynced_rules_for_security_group(
                 group, show_rules=show_rules))
         self.info('Number of unsynced rules found for instance ({0}):{1}'
-                   .format(instance.id, len(unsynced_rules)))
+                  .format(instance.id, len(unsynced_rules)))
         return unsynced_rules
 
     def get_security_group_rule_mapping_from_backend(self, group, security_group_rule):
@@ -962,11 +963,11 @@ class Midget(object):
             to_port = None
         for grant in security_group_rule.grants:
             self.info(self._bold('Looking for chain rule against grant: cidr_ip:"{0}", '
-                                  'srg_grp:"{1}", proto:"{2}", start_port:"{3}", end_port:"{4}"'
-                                  .format(grant.cidr_ip, grant.group_id,
-                                          security_group_rule.ip_protocol,
-                                          security_group_rule.from_port,
-                                          security_group_rule.to_port)))
+                                 'srg_grp:"{1}", proto:"{2}", start_port:"{3}", end_port:"{4}"'
+                                 .format(grant.cidr_ip, grant.group_id,
+                                         security_group_rule.ip_protocol,
+                                         security_group_rule.from_port,
+                                         security_group_rule.to_port)))
             for rule in chain.get_rules():
                 match = False
                 protocol_number = rule.get_nw_proto()
@@ -974,14 +975,14 @@ class Midget(object):
                 if protocol_number is not None:
                     r_protocol = str(self._get_protocol_name_by_number(protocol_number)).upper()
                 self.info('checking protocol:"{0}" vs rule_proto:"{1}"'.format(protocol,
-                                                                                r_protocol))
+                                                                               r_protocol))
                 if not (protocol == r_protocol):
                     continue
                 port_dict = rule.get_tp_dst() or {}
                 start_port = port_dict.get('start')
                 end_port = port_dict.get('end')
                 self.info('Protocol matched, checking fport:{0} vs sport:{1}, and tport:{2}'
-                           ' vs eport:{3}'.format(from_port, start_port, to_port, end_port))
+                          ' vs eport:{3}'.format(from_port, start_port, to_port, end_port))
                 if not (from_port == start_port and to_port == end_port):
                     continue
                 self.info('Rules port and protocols match up, now ip/src grp comparison...')
@@ -996,27 +997,26 @@ class Midget(object):
                     if ip_addr_grp:
                         ip_addr_grp_name = str(ip_addr_grp.get_name())
                         self.info('This rule has ipaddr group name:"{0}"'
-                                   .format(ip_addr_grp_name))
+                                  .format(ip_addr_grp_name))
                 self.info('checking grant.cidr_ip:"{0}" vs rule_cidr:"{1}"'
-                           .format(grant.cidr_ip, rule_cidr))
+                          .format(grant.cidr_ip, rule_cidr))
                 if grant.cidr_ip and (str(grant.cidr_ip) == rule_cidr):
                     match = True
                 elif grant.group_id and str(grant.group_id) in ip_addr_grp_name:
                     match = True
                 if match:
                     self.info('Found rule for cidr_ip:"{0}", srg_grp:"{1}", proto:"{2}", '
-                               'start_port:"{3}", end_port:"{4}"'
-                               .format(grant.cidr_ip, grant.group_id, protocol,
-                                       from_port, to_port))
+                              'start_port:"{3}", end_port:"{4}"'
+                              .format(grant.cidr_ip, grant.group_id, protocol, from_port, to_port))
                     if rule not in ret_rules:
                         ret_rules.append(rule)
                     if grant in ip_grants:
                         ip_grants.remove(grant)
                         break
         self.info('Found "{0}" rules for; Group:"{1}", ip_grants:"{2}", proto:"{3}", '
-                   'start_port:"{4}", end_port:"{5}"'
-                   .format(len(ret_rules), group, security_group_rule.grants, protocol,
-                           from_port, to_port))
+                  'start_port:"{4}", end_port:"{5}"'
+                  .format(len(ret_rules), group, security_group_rule.grants, protocol, from_port,
+                          to_port))
         if ret_rules:
             self.show_rules(rules=ret_rules)
         return ret_rules
@@ -1025,7 +1025,7 @@ class Midget(object):
         for group in instance.groups:
             chain = self.get_chain_for_security_group(group)
             self.info('Checking midonet chain:"{0}" for instance:"{1}", security group "{2}"'
-                       .format(chain.get_name(), instance.id, group.name))
+                      .format(chain.get_name(), instance.id, group.name))
             if self.does_chain_allow(chain=chain, src_addr=src_addr, protocol=protocol, port=port):
                 return True
         return False
@@ -1335,7 +1335,7 @@ class Midget(object):
             try:
                 self.info(self._bold("MAC IS NOT LEARNED ON A BRIDGE PORT AT THIS TIME !?!", 91))
                 self.info(self._bold("Trying to ping the instance private addr('{0}') now...?)"
-                                      .format(instance.private_ip_address), 91))
+                                     .format(instance.private_ip_address), 91))
                 self.ping_instance_private_ip_from_euca_internal(instance)
             except RuntimeError:
                 pass
@@ -1366,9 +1366,11 @@ class Midget(object):
         for group in groups:
             if not id or (id and group.id == id):
                 if not name or (name and group.name == name):
-                    self.info('Found matching security group for name:'+str(name)+' and id:'+str(id))
+                    self.info('Found matching security group for name:' + str(name) +
+                              ' and id:' + str(id))
                     return group
-        self.info('No matching security group found for name:'+str(name)+' and id:'+str(id))
+        self.info('No matching security group found for name:' + str(name) +
+                  ' and id:' + str(id))
         return None
 
     def show_security_group(self, group, printme=True):
@@ -1379,8 +1381,7 @@ class Midget(object):
             return
         group = self.get_security_group(id=group.id)
         if not group:
-            raise ValueError('Show sec group failed. Could not fetch group:'
-                             + str(group))
+            raise ValueError('Show sec group failed. Could not fetch group:' + str(group))
         title = markup("Security Group: {0}/{1}, VPC: {2}"
                        .format(group.name, group.id, group.vpc_id))
         maintable = PrettyTable([title])
@@ -1388,7 +1389,7 @@ class Midget(object):
                              "SRC_GRP_ID", "OWNER_ID", "PORT",
                              "END_PORT", "PROTO"])
         maintable.align["title"] = 'l'
-        #table.padding_width = 1
+        # table.padding_width = 1
         for rule in group.rules:
             port = rule.from_port
             end_port = rule.to_port
@@ -1417,4 +1418,3 @@ class Midget(object):
             printmethod('\n{0}\n'.format(pt))
         else:
             return pt
-

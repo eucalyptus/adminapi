@@ -15,5 +15,3 @@ class ClusterControllerHelpers(EucaMachineHelpers):
 
     def show_iptables(self):
         self.debug(self.sys('iptables-save', code=0, listformat=False))
-
-

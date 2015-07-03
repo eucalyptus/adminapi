@@ -752,6 +752,7 @@ class EucaServiceStatus(EucaBaseObj):
                 self.datetime = datetime.strptime(value, "%a %b %d %H:%M:%S %Z %Y")
             setattr(self, ename.lower(), value)
 
+
 class EucaServiceList(ResultSet):
     '''
     Result set used to parse a service response into EucaServices

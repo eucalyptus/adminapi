@@ -109,8 +109,9 @@ class NodeControllerHelpers(EucaMachineHelpers):
         printmethod = printmethod or self.eucahost.log.info
         vmtypes = self.get_vm_availability()
         cap = self.get_last_capacity_status()
-        main_pt = PrettyTable([markup('("{0}"\'s VM AVAILABILITY @ {1})')
-                                   .format(self.eucahost.hostname, cap.get('timestamp'))])
+        main_pt = PrettyTable(
+            [markup('("{0}"\'s VM AVAILABILITY @ {1})').format(self.eucahost.hostname,
+                                                               cap.get('timestamp'))])
         main_pt.border = 0
         main_pt.align = 'l'
         cpu_hdr = markup('CPU({0}/{1})'.format(cap.get('cores'), cap.get('cores_total')))
@@ -206,17 +207,17 @@ class NodeControllerHelpers(EucaMachineHelpers):
         prefix = str(instance) + " Console Output:"
         try:
             self.eucahost.cmd('tail -F ' + str(console_path),
-                             verbose=False,
-                             cb=self.remote_tail_monitor_cb,
-                             cbargs=[instance,
-                                     max_lines,
-                                     lines_read,
-                                     start_time,
-                                     timeout,
-                                     print_method,
-                                     prefix,
-                                     idle_timeout],
-                             timeout=idle_timeout)
+                              verbose=False,
+                              cb=self.remote_tail_monitor_cb,
+                              cbargs=[instance,
+                                      max_lines,
+                                      lines_read,
+                                      start_time,
+                                      timeout,
+                                      print_method,
+                                      prefix,
+                                      idle_timeout],
+                              timeout=idle_timeout)
         except CommandTimeoutException, cte:
             self.debug('Idle timeout fired while tailing console: ' + str(cte))
 
@@ -284,7 +285,7 @@ class NodeControllerHelpers(EucaMachineHelpers):
             instance = instance.id
         dm_dev = self.get_instance_block_disk_dev_on_node(instance, ebs_block_dev)
         sym_links = self.eucahost.sys('udevadm info --name ' + str(dm_dev) + ' --query symlink',
-                                     verbose=verbose, code=0)[0]
+                                      verbose=verbose, code=0)[0]
         for path in str(sym_links).split():
             if str(path).startswith('mapper/'):
                 mpath_dev = path.split('/')[1]
@@ -353,4 +354,4 @@ class NodeControllerHelpers(EucaMachineHelpers):
         if not isinstance(instance_id, types.StringTypes):
             instance = instance_id.id
         return self.eucahost.sys('virsh dumpxml ' + str(instance_id), listformat=False,
-                                verbose=False, code=0)
+                                 verbose=False, code=0)

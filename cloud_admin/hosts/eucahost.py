@@ -43,7 +43,7 @@ from cloud_admin.hosts.helpers.helpernamespace import HelperNamespace
 class EucaHost(Machine):
 
     def __init__(self, connection, hostname, services, helper_classes=None, **kwargs):
-        self.connection=connection
+        self.connection = connection
         self._eucalyptus_repo_file = None
         self._eucalyptus_enterprise_repo_file = None
         self._euca2ools_repo_file = None
@@ -190,7 +190,7 @@ class EucaHost(Machine):
             elif service.type == 'node':
                 ret['eucalyptus-nc'] = self.get_pid_info(self.get_eucalyptus_nc_pid())
             else:
-                if not 'eucalyptus' in ret:
+                if 'eucalyptus' not in ret:
                     ret['eucalyptus'] = self.get_pid_info(self.get_eucalyptus_cloud_pid())
         eucanetd_pid = self.get_eucanetd_service_pid()
         if eucanetd_pid:

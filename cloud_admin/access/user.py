@@ -1,6 +1,7 @@
 
 import re
 
+
 class IamUser(object):
     # Base Class For IAM User Objs
     def __init__(self, connection=None):
@@ -29,7 +30,7 @@ class IamUser(object):
             if self.arn:
                 match = re.search(':(\d{12}):', self.arn)
                 if match:
-                     self._account_id = match.group(1)
+                    self._account_id = match.group(1)
             if not self._account_id and self.account:
                 self._account_id = getattr(self.account, 'id', None)
         return self._account_id

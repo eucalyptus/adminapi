@@ -18,9 +18,3 @@ class HelperNamespace(object):
         self.node_controller = NodeControllerHelpers(eucahost)
         self.storage_controller = StorageControllerHelpers(eucahost)
         self.osg = ObjectStorageGatewayHelpers(eucahost)
-
-
-
-
-
-
