@@ -7,6 +7,7 @@ import sys
 import time
 import threading
 from cloud_utils.system_utils import local
+from cloud_utils.log_utils import get_traceback
 from cloud_utils.net_utils.ip_rx import remote_receiver, START_MESSAGE
 from cloud_utils.net_utils.ip_tx import remote_sender, send_packet
 from cloud_utils.net_utils.sshconnection import SshCbReturn, SshConnection
@@ -41,7 +42,7 @@ def test_port_status(ip,
             def debug(msg):
                 pass
 
-        debug('test_port_status, ip:'+str(ip)+', port:'+str(port)+', TCP:'+str(tcp))
+        debug('test_port_status, ip:' + str(ip) + ', port:' + str(port) + ', TCP:' + str(tcp))
         if tcp:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         else:
@@ -60,7 +61,7 @@ def test_port_status(ip,
             if recv_size:
                 ret_buf = s.recv(recv_size)
         except socket.error, se:
-            debug('test_port_status failed socket error:'+str(se[0]))
+            debug('test_port_status failed socket error:' + str(se[0]))
             # handle specific errors here, for now just for debug...
             ecode = se[0]
             if ecode == socket.errno.ECONNREFUSED:
@@ -163,24 +164,44 @@ def is_address_in_network(ip_addr, network):
 
 
 def packet_test(sender_ssh, receiver_ssh, protocol, dest_ip=None, src_addrs=None,
-                port=None, src_port=None, bind=False, count=1, payload=None, timeout=5,
-                verbose=False):
+                port=None, src_port=None, bind=False, count=1, interval=.1, payload=None,
+                timeout=5, verbose=False):
     """
     Test utility to send and receive IP packets of varying protocol types, ports, counts, etc.
-    between 2 remote nodes driven by the SSH connections provided.
-    Example 1) UDP test between 2 remote hosts using:
-        - the UDP protocol number 17
-        - port 101
-        - 10 packets
-    >>packet_test(ssh_tx, ssh_rx, proto=17, port=101, count=10, timeout=10, verbose=False)
+    between 2 hosts. The sender can either be the local machine (by providing 'None' for the
+    'sender_ssh' arg, or a remote machine by providing an SshConnection obj, the receiver
+    is an SshConnection obj. To make the local machine the receiver, create in SshConnection obj
+    using local host for this arg. The test will sftp the ip_tx.py and ip_rx.py test scripts to
+    the respective ssh hosts and then perform a send -> receive packet test based on the criteria
+    provided in the args/kwargs. The test returns the results in dict format. The 'packet'
+    dict returned is in the format: packets: { src_ip: { dest_ip: { port: count}}}
 
-    Example 2) SCTP between 2 eutester Instance objects using:
-        -the SCTP protocol number 132
-        -sending to the instance's private ip address
-        -filtering on the senders ip address
-        -binding the receiver to the provided port
-    >> packet_test(ins1.ssh, ins2.ssh, , port=100, count=2, dest_ip=ins2.private_ip_address,
-                   src_addrs=ins1.ip_address, bind=True)
+    # Example sending an icmp packet from the local machine to a remote ssh 'ins2.ssh'
+    # with results:
+
+    >>packet_test(None, ins2.ssh, protocol=1, count=2, timeout=10, dest_ip=ins2.ip_address)
+
+        {u'count': 2,  # Number of packets received which met filter criteria
+         u'date': u'Wed Jul  8 03:23:31 2015',  # Timestamp of capture
+         u'elapsed': 0.13,  # time elapsed for capture
+         u'error': u'', # Any errors which were caught during the capture
+         u'name': u'PROTO:1, SRCADDRS:{}, DSTADDRS:{}, PORTS:{}', # Name of this capture test
+         u'packets': {u'10.5.1.86': {u'10.111.75.155': {u'unknown': 2}}}, # Dict of packets in
+         u'protocol': 1} # protocol number/id
+
+    # Example 1) UDP test between 2 remote hosts using:
+    #    - the UDP protocol number 17
+    #    - port 101
+    #    - 10 packets
+    >>packet_test(ssh_tx, ssh_rx, protocol=17, port=101, count=10, timeout=10, verbose=False)
+
+    # Example 2) SCTP between 2 eutester Instance objects using:
+    #    -the SCTP protocol number 132
+    #    -sending to the instance's private ip address
+    #    -filtering on the senders ip address
+    #    -binding the receiver to the provided port
+    >> packet_test(ins1.ssh, ins2.ssh, protocol=132, port=100, count=2,
+                   dest_ip=ins2.private_ip_address, src_addrs=ins1.ip_address, bind=True)
 
     :param sender_ssh: sshconnection object to send packets from, if this is 'None' then
                        packets will be sent from the local machine instead
@@ -191,6 +212,7 @@ def packet_test(sender_ssh, receiver_ssh, protocol, dest_ip=None, src_addrs=None
     :param port: optional port to use for sending packets to
     :param bind: option to bind receiver to provided port, maybe needed to rx certain packet types
     :param count: number of packets to send and expect
+    :param interval: time to pause between sending packets, default=.1 seconds.
     :param payload: optional payload to include in the sent packets (string buffer)
     :param timeout: time in seconds to allow
     :param verbose: boolean, used to control verbose logging of info
@@ -252,15 +274,19 @@ def packet_test(sender_ssh, receiver_ssh, protocol, dest_ip=None, src_addrs=None
                                           timeout=timeout)
 
     class Sender(threading.Thread):
-        def __init__(self, ssh, dest_ip, proto, port=None, srcport=None, count=1, verbose=False):
+        def __init__(self, ssh, dest_ip, proto, port=None, srcport=None, count=1, interval=.1,
+                     verbose=False, socktimeout=None):
             self.ssh = ssh
             self.dest_ip = dest_ip
             self.proto = proto
             self.port = port
             self.srcport = srcport
             self.count = count
+            self.error = None
             self.result = None
             self.done_time = None
+            self.interval = interval
+            self.socktimeout = socktimeout
             self.verbose = verbose
             super(Sender, self).__init__()
 
@@ -289,22 +315,33 @@ def packet_test(sender_ssh, receiver_ssh, protocol, dest_ip=None, src_addrs=None
                 self.debug('Starting Sender...\n')
             if self.ssh is None:
                 send_packet(destip=self.dest_ip, proto=self.proto, dstport=self.port,
-                            count=self.count, verbose=self.verbose)
+                            count=self.count, interval=interval, verbose=self.verbose)
             else:
-                self.result = remote_sender(ssh=self.ssh, dst_addr=self.dest_ip, proto=self.proto,
-                                            port=self.port, srcport=self.srcport, count=self.count,
-                                            verbose=self.verbose, cb=self.packet_test_cb,
-                                            cbargs=[verbose])
+                try:
+                    self.result = remote_sender(ssh=self.ssh, dst_addr=self.dest_ip, proto=self.proto,
+                                                port=self.port, srcport=self.srcport, count=self.count,
+                                                interval=interval, verbose=self.verbose,
+                                                socktimeout=self.socktimeout, cb=self.packet_test_cb,
+                                                cbargs=[verbose])
+                except Exception as E:
+                    self.error = "{0}\nERROR IN PACKET SENDER:{1}".format(get_traceback(), str(E))
             self.done_time = time.time()
 
+    socktimeout = timeout - 1
+    if socktimeout < 1:
+        socktimeout = 1
     tx = Sender(ssh=sender_ssh, dest_ip=dest_ip, proto=protocol, port=port, srcport=src_port,
-                count=count, verbose=verbose)
+                count=count, interval=interval, verbose=verbose, socktimeout=socktimeout)
     rx = Receiver(ssh=receiver_ssh, src_addrs=src_addrs, port=port, proto=protocol, bind=bind,
                   count=count, verbose=verbose, timeout=timeout, sender=tx)
     rx.run()
     if not isinstance(rx.result, dict):
-        raise RuntimeError('Failed to read in results dict from remote receiver, output: {0}'
-                           .format(rx.result))
+        errmsg = ""
+        if tx.error:
+            errmsg = "ERROR ON SENDER:{1}\n".format(tx.error)
+        errmsg += 'Failed to read in results dict from remote receiver, output: {0}'\
+            .format(rx.result)
+        raise RuntimeError(errmsg)
     if verbose:
         json.dumps(rx.result, sort_keys=True, indent=4)
     return rx.result

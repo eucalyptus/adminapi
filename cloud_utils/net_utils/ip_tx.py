@@ -11,6 +11,7 @@ import array
 import socket
 import struct
 import sys
+import time
 from optparse import OptionParser, OptionValueError
 # ICMP TYPES
 ICMP_ECHO_REQUEST = 8
@@ -82,8 +83,8 @@ def get_src(dest):
     return source_ip
 
 
-def remote_sender(ssh, dst_addr, port=None, srcport=None, proto=17, count=1, timeout=15, data=None,
-                  verbose=False, cb=None, cbargs=None):
+def remote_sender(ssh, dst_addr, port=None, srcport=None, proto=17, count=1, socktimeout=10,
+                  timeout=15, data=None, verbose=False, interval=.1, cb=None, cbargs=None):
     """
     Uses the ssh SshConnection obj's sftp interface to transfer this script to the remote
     machine and execute it with the parameters provided. Will return the combined stdout & stderr
@@ -96,6 +97,7 @@ def remote_sender(ssh, dst_addr, port=None, srcport=None, proto=17, count=1, tim
     :param proto: The IP protocol number (ie: 1=icmp, 6=tcp, 17=udp, 132=sctp)
     :param count: The number of packets to send
     :param timeout: The max amount of time allowed for the remote command to execute
+    :param socktimeout: Time out used for socket operations
     :param data: Optional data to append to the built packet(s)
     :param verbose: Boolean to enable/disable printing of debug info
     :param cb: A method/function to be used as a call back to handle the ssh command's output
@@ -110,7 +112,8 @@ def remote_sender(ssh, dst_addr, port=None, srcport=None, proto=17, count=1, tim
     script = sftp_file(ssh, verbose_level=verbose_level)
     # destip, proto, dstport=345, ptype=None, payload=None
 
-    cmd = "python {0} -o {1} -c {2} -d {3} ".format(script, proto, count, dst_addr)
+    cmd = "python {0} -o {1} -c {2} -d {3} -i {4} -t {5} "\
+        .format(script, proto, count, dst_addr, interval, socktimeout)
     if port:
         cmd += " -p {0} ".format(port)
     if srcport is not None:
@@ -129,7 +132,7 @@ def remote_sender(ssh, dst_addr, port=None, srcport=None, proto=17, count=1, tim
     return out
 
 
-def send_ip_packet(destip, proto=4, payload=None):
+def send_ip_packet(destip, proto=4, count=1, interval=.1, payload=None, timeout=10):
     """
     Send a raw ip packet, payload can be used to append to the IP header...
     :param destip: Destination ip
@@ -142,7 +145,10 @@ def send_ip_packet(destip, proto=4, payload=None):
     payload = payload or ""
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_RAW, proto)
-        s.sendto(payload, (destip, 0))
+        s.settimeout(timeout)
+        for x in xrange(0, count):
+            s.sendto(payload, (destip, 0))
+            time.sleep(interval)
     except socket.error as SE:
         if SE.errno == 1 and 'not permitted' in SE.strerror:
             sys.stderr.write('Permission error creating socket, try with sudo, root...?\n')
@@ -153,7 +159,7 @@ def send_ip_packet(destip, proto=4, payload=None):
 
 
 def send_sctp_packet(destip, dstport=101, srcport=100, proto=132, ptype=None, payload=None,
-                     sctpobj=None):
+                     sctpobj=None, count=1, interval=.1, timeout=10):
     """
     Send Basic SCTP packets
 
@@ -174,9 +180,12 @@ def send_sctp_packet(destip, dstport=101, srcport=100, proto=132, ptype=None, pa
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_RAW, proto)
         s.setsockopt(socket.SOL_IP, socket.IP_TOS, 0x02)  # set ecn bit
+        s.settimeout(timeout)
         if not sctpobj:
             sctpobj = SCTP(srcport=srcport, dstport=dstport, ptype=ptype, payload=payload)
-        s.sendto(sctpobj.pack(), (destip, dstport))
+        for x in xrange(0, count):
+            s.sendto(sctpobj.pack(), (destip, dstport))
+            time.sleep(interval)
     except socket.error as SE:
         if SE.errno == 1 and 'not permitted' in SE.strerror:
             sys.stderr.write('Permission error creating socket, try with sudo, root...?\n')
@@ -186,7 +195,8 @@ def send_sctp_packet(destip, dstport=101, srcport=100, proto=132, ptype=None, pa
             s.close()
 
 
-def send_udp_packet(destip, srcport=None, dstport=101, proto=17, payload=None):
+def send_udp_packet(destip, srcport=None, dstport=101, proto=17, payload=None, count=1,
+                    interval=.1, timeout=10):
     """
     Send basic UDP packet
 
@@ -203,9 +213,12 @@ def send_udp_packet(destip, srcport=None, dstport=101, proto=17, payload=None):
     payload = payload or ""
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, proto)
+        s.settimeout(timeout)
         if srcport is not None:
-            s.bind('', srcport)
-        s.sendto(payload, (destip, dstport))
+            s.bind(('', srcport))
+        for x in xrange(0, count):
+            s.sendto(payload, (destip, dstport))
+            time.sleep(interval)
     except socket.error as SE:
         if SE.errno == 1 and 'not permitted' in SE.strerror:
             sys.stderr.write('Permission error creating socket, try with sudo, root...?\n')
@@ -215,7 +228,8 @@ def send_udp_packet(destip, srcport=None, dstport=101, proto=17, payload=None):
             s.close()
 
 
-def send_tcp_packet(destip, dstport=101, srcport=None, proto=6, payload=None, bufsize=4096):
+def send_tcp_packet(destip, dstport=101, srcport=None, proto=6, payload=None, bufsize=None,
+                    count=1, interval=.1, timeout=10):
     """
     Send basic TCP packet
 
@@ -228,17 +242,22 @@ def send_tcp_packet(destip, dstport=101, srcport=None, proto=6, payload=None, bu
     :param bufsize: Buffer size for recv() on socket after sending packet
     :return: Any data read on socket after sending the packet
     """
+    data = ''
     s = None
     if payload is None:
             payload = 'TCP TEST PACKET'
     payload = payload or ""
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM, proto)
+        s.settimeout(timeout)
         if srcport is not None:
-            s.bind('', srcport)
+            s.bind(('', srcport))
         s.connect((destip, dstport))
-        s.send(payload)
-        data = s.recv(bufsize)
+        for x in xrange(0, count):
+            s.send(payload)
+            if bufsize:
+                data += s.recv(bufsize)
+            time.sleep(interval)
     except socket.error as SE:
         if SE.errno == 1 and 'not permitted' in SE.strerror:
             sys.stderr.write('Permission error creating socket, try with sudo, root...?\n')
@@ -249,8 +268,8 @@ def send_tcp_packet(destip, dstport=101, srcport=None, proto=6, payload=None, bu
     return data
 
 
-def send_icmp_packet(destip, id=1234, seqnum=1, code=0, proto=1, ptype=None,
-                     payload='ICMP TEST PACKET'):
+def send_icmp_packet(destip, id=1234, seqnum=1, code=0, proto=1, ptype=None, count=1, interval=.1,
+                     payload='ICMP TEST PACKET', timeout=10):
     """
     Send basic ICMP packet (note: does not wait for, or validate a response)
 
@@ -270,8 +289,11 @@ def send_icmp_packet(destip, id=1234, seqnum=1, code=0, proto=1, ptype=None,
         ptype = ICMP_ECHO_REQUEST
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_RAW, proto)
+        s.settimeout(timeout)
         icmp = ICMP(destaddr=destip, id=id, seqnum=seqnum, code=code, ptype=ptype, payload=payload)
-        s.sendto(icmp.pack(), (destip, 0))
+        for x in xrange(0, count):
+            s.sendto(icmp.pack(), (destip, 0))
+            time.sleep(interval)
     except socket.error as SE:
         if SE.errno == 1 and 'not permitted' in SE.strerror:
             sys.stderr.write('Permission error creating socket, try with sudo, root...?\n')
@@ -281,8 +303,8 @@ def send_icmp_packet(destip, id=1234, seqnum=1, code=0, proto=1, ptype=None,
             s.close()
 
 
-def send_packet(destip, proto, srcport=100, dstport=345, ptype=None, payload=None, count=1,
-                verbose=DEBUG):
+def send_packet(destip, proto, srcport=None, dstport=345, ptype=None, payload=None, count=1,
+                interval=.1, timeout=10, verbose=DEBUG):
     """
     Wrapper to sends packets of varying types
     :param destip: Destination IP to send packet to
@@ -294,20 +316,24 @@ def send_packet(destip, proto, srcport=100, dstport=345, ptype=None, payload=Non
     :param count: Number of packets to send
     :param verbose: Sets the level info will be logged at
     """
-    for x in xrange(0, count):
-        debug('send_packet: destip:{0}, dstport:{1}, proto:{2}, ptype:{3}'
-              .format(destip, dstport, proto, ptype), level=verbose)
-        if proto in [1, 'icmp']:
-            send_icmp_packet(destip=destip, ptype=ptype, payload=payload)
-        elif proto in [6, 'tcp']:
-            send_tcp_packet(destip=destip, srcport=srcport, dstport=dstport, payload=payload)
-        elif proto in [17, 'udp']:
-            send_udp_packet(destip=destip, srcport=srcport, dstport=dstport, payload=payload)
-        elif proto in [132, 'sctp']:
-            send_sctp_packet(destip=destip, srcport=srcport, ptype=ptype, dstport=dstport,
-                             payload=payload)
-        else:
-            send_ip_packet(destip=destip, proto=proto, payload=payload)
+
+    debug('send_packet: destip:{0}, dstport:{1}, proto:{2}, ptype:{3}, count:{4}, interval:{5}'
+          .format(destip, dstport, proto, ptype, count, interval), level=verbose)
+    if proto in [1, 'icmp']:
+        send_icmp_packet(destip=destip, ptype=ptype, payload=payload, count=count,
+                         interval=interval, timeout=timeout)
+    elif proto in [6, 'tcp']:
+        send_tcp_packet(destip=destip, srcport=srcport, dstport=dstport, payload=payload,
+                        count=count, interval=interval, timeout=timeout)
+    elif proto in [17, 'udp']:
+        send_udp_packet(destip=destip, srcport=srcport, dstport=dstport, payload=payload,
+                        count=count, interval=interval, timeout=timeout)
+    elif proto in [132, 'sctp']:
+        send_sctp_packet(destip=destip, srcport=srcport, ptype=ptype, dstport=dstport,
+                         payload=payload, count=count, interval=interval, timeout=timeout)
+    else:
+        send_ip_packet(destip=destip, proto=proto, payload=payload, count=count, interval=interval,
+                       timeout=timeout)
 
 
 ###################################################################################################
@@ -696,10 +722,13 @@ if __name__ == "__main__":
     parser = OptionParser()
     parser.add_option("-p", "--dstport", dest="dstport", type="int", default=101,
                       help="Destination Port", metavar="PORT")
-    parser.add_option("-s", "--srcport", dest="srcport", type="int", default=None,
+    parser.add_option("-s", "--srcport", dest="srcport", type="int", default=100,
                       help="Source Port", metavar="PORT")
     parser.add_option("-c", "--count", dest="count", type="int", default=1,
                       help="Number of packets to send", metavar="COUNT")
+    parser.add_option("-i", "--interval", dest="interval", type="float", default=.1,
+                      help="Time interval between sending packets, default='.1'",
+                      metavar="INTERVAL")
     parser.add_option("-d", "--dst", dest="destip", default=None,
                       help="Destination ip", metavar="IP")
     parser.add_option("-o", "--proto", dest="proto", type="int", default=17,
@@ -709,6 +738,8 @@ if __name__ == "__main__":
                       help="Chunk, data, payload, etc", metavar="DATA")
     parser.add_option("-v", "--verbose", dest="verbose", type='int', default=DEBUG,
                       help="Verbose level, 0=quiet, 1=info, 2=debug, 3=trace. Default=1")
+    parser.add_option("-t", "--socktimeout", dest='socktimeout', type='float', default=10,
+                      help='Socket timeout in seconds', metavar='TIMEOUT')
 
     options, args = parser.parse_args()
     if not options.destip:
@@ -717,9 +748,12 @@ if __name__ == "__main__":
     destip = options.destip
     proto = options.proto
     srcport = options.srcport
+    interval = options.interval
+    socktimeout = options.socktimeout
     if srcport is not None:
         srcport = int(srcport)
     dstport = int(options.dstport)
     payload = options.payload
     count = options.count
-    send_packet(destip=destip, proto=proto, dstport=dstport, payload=payload, count=count)
+    send_packet(destip=destip, proto=proto, srcport=srcport, dstport=dstport, payload=payload,
+                count=count, interval=interval, timeout=socktimeout)

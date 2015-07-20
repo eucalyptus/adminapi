@@ -212,6 +212,54 @@ def get_proto_name(number):
             return str(proto).replace('IPPROTO_', '')
     return str(number)
 
+def parse_packet_count(results_dict, srcaddr=None, dstaddr=None, port=None):
+    """
+    Filters the results dict and returns a count of packets based upon the provided filters.
+    :param results_dict: dict providing info as to the results of an ip_rx packet capture
+    :param srcaddr: string, used to filter the results by the src address of the packets
+    :param dstaddr: string, used to filter the results by the dest address of the packets
+    :param port: filter the results by this port number
+    :return: number of packets which match the filters within the results_dict provided.
+    """
+    packets = results_dict.get('packets')
+    if srcaddr:
+        dest_packets = packets.get(srcaddr, None)
+    else:
+        # srcaddr is not part of the filter criteria, flatten the dict combining
+        # combining entries per destination addr
+        dest_packets = {}
+        for addr, y in packets.iteritems():
+            for d, p in y.iteritems():
+                if not dest_packets.get(d):
+                    dest_packets[d] = {}
+                for pn, cnt in p.iteritems():
+                    dest_packets[d][pn] = ((dest_packets.get(d, None) and
+                                            dest_packets[d].get(pn, None) or 0) + cnt)
+        dest_packets = dest_packets
+    if not dest_packets:
+        return 0
+    if dstaddr:
+        ports = dest_packets.get(dstaddr, None)
+    else:
+        # dstaddr is not part the filter criteria, flatten the dict combing entries
+        # per port
+        ports = {}
+        for dst, pdict in dest_packets.iteritems():
+            for port, cnt in pdict.iteritems():
+                ports[port] = ports.get(port, 0) + cnt
+    if not ports:
+        return 0
+    if port:
+        return ports.get(str(port), 0)
+    else:
+        # port is not part of the filter criteria, return the total number of
+        # remaining packets
+        count = 0
+        for port, cnt in ports.iteritems():
+            count += cnt
+        return count
+
+
 
 def get_option_parser():
     parser = OptionParser()
@@ -267,7 +315,7 @@ def get_option_parser():
 ##################################################################################################
 
 class IPHdr(object):
-    def __init__(self, packet):
+    def __init__(self, packet=None):
         """
         Simple class used to parse and represent an IP header.
         :param packet: Packet should be raw bytes read from socket, etc..
@@ -278,7 +326,8 @@ class IPHdr(object):
         self.protocol = None
         self.src_addr = None
         self.dst_addr = None
-        self.parse_ip_hdr(packet)
+        if packet is not None:
+            self.parse_ip_hdr(packet)
 
     def parse_ip_hdr(self, packet):
         """
@@ -304,7 +353,6 @@ class IPHdr(object):
         debug("IP ver:{0}, HDR LEN:{1}, TTL:{2}, PROTO:{3}, SRC ADDR:{4}, DST ADDR:{5}"
               .format(self.version, self.header_len, self.ttl, self.protocol, self.src_addr,
                       self.dst_addr), level=verbose)
-
 
 ###############################################################################################
 #                       Start main socket listener routine...
@@ -366,10 +414,14 @@ if __name__ == "__main__":
     start = time.time()
     debug('{0} For Protocol:{1}/{2}'.format(START_MESSAGE, get_proto_name(PROTO), PROTO),
           level=INFO)
+    if PROTO in [6, 'tcp']:
+        socktype = socket.SOCK_STREAM
+    else:
+        socktype = socket.SOCK_RAW
 
     try:
         try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, PROTO)
+            sock = socket.socket(socket.AF_INET, socktype, PROTO)
         except socket.error as SE:
             if 'not permitted' in SE.strerror:
                 try:
@@ -378,13 +430,24 @@ if __name__ == "__main__":
                 except:
                     pass
             raise
-        if BIND:
+        if BIND or socktype == socket.SOCK_STREAM:
             bport = DSTPORTS.iterkeys().next()
             debug("Binding to:'{0}':{1}".format(HOST, bport), DEBUG)
             sock.bind((HOST, bport))
+        connection = None
         pkts = 0
         done = False
+        info = None
         time_remaining = TIMEOUT
+        if socktype == socket.SOCK_STREAM:
+            sock.listen(1)
+            sock.settimeout(time_remaining)
+            if options.verbose >= TRACE:
+                sys.stdout.write('# Waiting for TCP connection...')
+                sys.stdout.flush()
+            connection, ip_info = sock.accept()
+            ip, srcport = ip_info
+            dstport = bport
         while not done:
             if TIMEOUT is not None:
                 time_remaining = TIMEOUT - (time.time() - start)
@@ -395,29 +458,44 @@ if __name__ == "__main__":
                 if time_remaining is not None:
                     sock.settimeout(time_remaining)
                 try:
-                    data, (ip, info) = sock.recvfrom(65565)
+                    if connection:
+                        data = connection.recv(65565)
+                    else:
+                        data, (ip, info) = sock.recvfrom(65565)
                     if options.verbose >= TRACE:
                         sys.stdout.write('#')
                         sys.stdout.flush()
+                    if data and connection:
+                        connection.sendall(data)
                 except socket.timeout:
                     done = True
                     continue
                 # Parse IP header...
-                iphdr = IPHdr(data)
+                if socktype == socket.SOCK_STREAM:
+                    iphdr = IPHdr()
+                    iphdr.dst_addr = HOST
+                    iphdr.protocol = PROTO
+                    iphdr.src_addr = ip
+                else:
+                    iphdr = IPHdr(data)
 
                 # Check packet info against the provided filters...
                 if PROTO and PROTO != iphdr.protocol:
+                    # These aren't the packets you are looking for...
                     continue
-                if DSTPORTS:
-                    srcport, dstport = struct.unpack('!HH',
-                                                     data[iphdr.header_len:iphdr.header_len + 4])
-                    if SRCPORTS and srcport not in SRCPORTS:
-                        continue
-                    if DSTPORTS and dstport not in DSTPORTS:
-                        continue
-                else:
-                    srcport = 'unknown'
-                    dstport = 'unknown'
+                if not socktype == socket.SOCK_STREAM:
+                    if DSTPORTS:
+                        srcport, dstport = struct.unpack('!HH',
+                                                         data[iphdr.header_len:iphdr.header_len + 4])
+                        if SRCPORTS and srcport not in SRCPORTS:
+                            # These aren't the packets you are looking for...
+                            continue
+                        if DSTPORTS and dstport not in DSTPORTS:
+                            # These aren't the packets you are looking for...
+                            continue
+                    else:
+                        srcport = 'unknown'
+                        dstport = 'unknown'
 
                 if ((not SRCADDRS or (iphdr.src_addr in SRCADDRS)) and
                         (not DSTADDRS or (iphdr.dst_addr in DSTADDRS))):
@@ -470,3 +548,7 @@ if __name__ == "__main__":
             with open(options.resultsfile, 'a+') as res_file:
                 res_file.write(out)
                 res_file.flush()
+        if results['error']:
+            exit(1)
+        else:
+            exit(0)

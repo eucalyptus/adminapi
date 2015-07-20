@@ -582,6 +582,14 @@ class Midget(object):
         else:
             return mainpt
 
+    def add_bgp_peer(self, router, port, local_as, peer_as, peer_addr):
+
+        if isinstance(router, Router):
+            pass
+        if isinstance(router, basestring):
+            pass
+        raise NotImplementedError('Method not implemented yet')
+
     def _format_ad_routes(self, ad_routes):
         adrs = []
         if not isinstance(ad_routes, list):
@@ -942,6 +950,9 @@ class Midget(object):
     def get_security_group_rule_mapping_from_backend(self, group, security_group_rule):
         """
         Attempts to find the provided security group rule within midonent.
+        :param group: A Euca security group id, or boto security group object
+        :param security_group_rule: A boto IPPermissions obj (rule).
+        :returns the midonet rule(s) which support the security group rule provided
         """
         ret_rules = []
         assert isinstance(security_group_rule, IPPermissions), \
@@ -1020,6 +1031,9 @@ class Midget(object):
         if ret_rules:
             self.show_rules(rules=ret_rules)
         return ret_rules
+
+
+
 
     def do_instance_rules_allow(self, instance, src_addr, protocol, port):
         for group in instance.groups:
@@ -1141,6 +1155,7 @@ class Midget(object):
         pt = PrettyTable([title])
         pt.align[title] = 'l'
         pt.border = 0
+        pt.padding_width = 0
         buf = str(self.show_router_for_instance(instance=instance, printme=False))
         buf += str(self.show_bridge_for_instance(instance=instance, printme=False))
         buf += str(self.show_bridge_port_for_instance(instance=instance, printme=False))
@@ -1149,7 +1164,10 @@ class Midget(object):
         eucatitle = self._bold('"EUCALYPTUS CLOUD" INSTANCE INFO ({0}):'.format(instance.id), 94)
         ept = PrettyTable([eucatitle])
         ept.align[eucatitle] = 'l'
-        ebuf = "\n{0}\n".format(self.show_security_groups_for_instance(instance, printme=False))
+        secpt = self.show_security_groups_for_instance(instance, printme=False)
+        secpt.border = 0
+        secpt.padding_width = 0
+        ebuf = "\n{0}\n".format(secpt)
         # ebuf = "\n" + str(self.eucaconnection.show_instance(instance, printme=False)) + "\n"
         ept.add_row([ebuf])
         buf += str(ept)
@@ -1342,6 +1360,52 @@ class Midget(object):
         port = self.get_bridge_port_for_instance_learned(instance)
         return port
 
+    def get_tunnel_zones(self, name=None, id=None):
+        if id:
+            return self.mapi.get_tunnel_zone(id)
+        elif name:
+            tzones = self.mapi.get_tunnel_zones()
+            for tz in tzones:
+                if str(tz.get_name()) == str(name):
+                    return tz
+        else:
+            return self.mapi.get_tunnel_zones()
+        return None
+
+
+    def show_tunnel_zones(self, tzones=None, highlight_ip=None, printme=True):
+        ip = highlight_ip
+        tzones = tzones or self.get_tunnel_zones()
+        if not isinstance(tzones, list):
+            tzones = [tzones]
+        main_pt = PrettyTable(['TUNNEL ZONES'])
+        main_pt.header = False
+        main_pt.border = False
+        main_pt.align = 'l'
+        for tz in tzones:
+            title = markup("Name:{0}, {1}, type:{2}".format(tz.get_name(),
+                                                            tz.get_id(),
+                                                            tz.get_type()), [1, 94])
+            mediapt = ("HostListMediaType:{0}, HostMediaType:{1}"
+                       .format(tz.__dict__.get('tunnel_zone_host_list_media_type'),
+                               tz.__dict__.get('tunnel_zone_host_media_type')))
+            tzpt = PrettyTable([title])
+            tzpt.align = 'l'
+            tzpt.add_row([mediapt])
+            hostpt = PrettyTable(['HOST IP', 'HOST ID'])
+            hostpt.align = 'l'
+            for host in tz.get_hosts():
+                host_ip = host.get_ip_address()
+                if ip and host_ip == ip:
+                    host_ip = markup(host_ip, 102)
+                hostpt.add_row([host_ip, host.get_host_id()])
+            tzpt.add_row([str(hostpt)])
+            main_pt.add_row([tzpt])
+        if printme:
+            self.info("\n{0}\n".format(main_pt))
+        else:
+            return main_pt
+
     def get_security_group(self, id=None, name=None):
         """
          Adding this as both a convienence to the user to separate euare groups
@@ -1385,11 +1449,13 @@ class Midget(object):
         title = markup("Security Group: {0}/{1}, VPC: {2}"
                        .format(group.name, group.id, group.vpc_id))
         maintable = PrettyTable([title])
+        maintable.padding_width = 0
+        maintable.align["title"] = 'l'
         table = PrettyTable(["CIDR_IP", "SRC_GRP_NAME",
                              "SRC_GRP_ID", "OWNER_ID", "PORT",
                              "END_PORT", "PROTO"])
-        maintable.align["title"] = 'l'
-        # table.padding_width = 1
+        table.vrules = 2
+        table.padding_width = 0
         for rule in group.rules:
             port = rule.from_port
             end_port = rule.to_port
