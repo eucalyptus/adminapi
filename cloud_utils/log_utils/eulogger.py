@@ -108,8 +108,9 @@ class Eulogger(logging.Logger):
         self.identifier = identifier or name
 
         parent_logger = logging.getLogger(self.parent_logger_name)
-        childlogger = parent_logger.getChild(name)
-        self.__dict__.update(childlogger.__dict__)
+        if hasattr(parent_logger, 'getChild'):
+            childlogger = parent_logger.getChild(name)
+            self.__dict__.update(childlogger.__dict__)
         self.parent = self.parent or parent_logger
         self.logfile = os.path.join(logfile)
         id_string = ""
