@@ -1032,9 +1032,6 @@ class Midget(object):
             self.show_rules(rules=ret_rules)
         return ret_rules
 
-
-
-
     def do_instance_rules_allow(self, instance, src_addr, protocol, port):
         for group in instance.groups:
             chain = self.get_chain_for_security_group(group)
