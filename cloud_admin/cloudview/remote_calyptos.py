@@ -33,8 +33,9 @@ parser.add_argument("-l", "--local-env", default=None,
                          " describe the topology being built")
 parser.add_argument("-e", "--env", default=None,
                     help="A remote path to the Calyptos environment.yml file used to "
-                         " describe the topology being built. By default will create "
-                         "'environment.yml' in the calyptos source dir")
+                         " describe the topology being built. Must be an absolute path"
+                         "or one relative to the Calyptos source dir."
+                         "By default will create 'environment.yml' in the calyptos source dir")
 parser.add_argument("-c", "--config", default=None,
                     help="A local or remote path to the Calyptos configuration file. Used for"
                          "Calyptos internal mappings")
@@ -217,12 +218,17 @@ def prep_and_provision(local_env=None, remote_env=None, password=None, virtualen
 
     if destdir:
         dest = os.path.join(destdir, 'calyptos')
+    # Prep the remote environment file...
     remote_env = remote_env or args.env
+    local_env = local_env or args.local_env
     if not remote_env:
         remote_env = 'environment.yml'
-    local_env = local_env or args.local_env
+        remote_env_dest = os.path.join(dest, remote_env)
+    else:
+        remote_env_dest = remote_env
+
     if local_env:
-        sync_environment_with_remote(local_env, remote_env)
+        sync_environment_with_remote(local_env, remote_env_dest)
     try:
         ssh.sys('ls {0}'.format(os.path.join(dest,remote_env)), code=0)
     except CommandExitCodeException:
