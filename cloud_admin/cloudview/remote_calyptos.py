@@ -1,6 +1,7 @@
 #!/usr/bin/python
 
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter, ArgumentError
+import logging
 import os
 import re
 import sys
@@ -9,7 +10,6 @@ from traceback import print_exc
 try:
     from cloud_utils.net_utils.sshconnection import SshConnection, CommandExitCodeException, \
         SshCbReturn
-    from cloud_utils.log_utils.eulogger import Eulogger
     from cloud_utils.log_utils import markup
 except ImportError as IE:
     sys.stderr.write("Import adminapi error, missing adminapi? Try:\n"
@@ -76,10 +76,19 @@ parser.add_argument("--commands", default="prepare, bootstrap, provision",
 args = parser.parse_args()
 if not args.host:
     raise ArgumentError(args.host, 'Remote host (ip/hostname) must be provided')
-log_level = 'info'
+
+# Setup logger...
+log_level = 'INFO'
 if args.debug:
-    log_level = 'debug'
-logger = Eulogger(stdout_level=log_level, identifier=args.host)
+    log_level = 'DEBUG'
+logger = logging.getLogger('args.host')
+logger.setLevel(getattr(logging, log_level.upper()))
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
+ch.setFormatter(formatter)
+logger.addHandler(ch)
+
 venv_dest = None
 if args.virtualenv:
     venv_dest = os.path.join(args.destdir, args.virtualenv)

@@ -152,9 +152,10 @@ class Eulogger(logging.Logger):
 
     def getparent_files(self):
         files = []
-        for h in self.parent.handlers:
-            if isinstance(h, logging.FileHandler):
-                files.append(h.stream.name)
+        if self.parent:
+            for h in self.parent.handlers:
+                if isinstance(h, logging.FileHandler):
+                    files.append(h.stream.name)
         return files
 
     def set_stdout_loglevel(self, level):
@@ -170,6 +171,15 @@ class Eulogger(logging.Logger):
                 if 'stdout' in handler.stream.name:
                     handler.setLevel(level)
         self.stdout_level = level
+
+    def getChild(self, suffix):
+        func = getattr(logging.Logger, 'getChild')
+        if func:
+            return func(self, suffix)
+        else:
+            if self.root is not self:
+                suffix = '.'.join((self.name, suffix))
+            return self.manager.getLogger(suffix)
 
 
 class AllowLoggerByName(logging.Filter):
