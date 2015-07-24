@@ -749,7 +749,7 @@ class EucaServiceStatus(EucaBaseObj):
             if ename == 'severity':
                 self.name = value
             if ename == 'timestamp':
-                self.datetime = datetime.strptime(value, "%a %b %d %H:%M:%S %Z %Y")
+                self.datetime = datetime.strptime(str(value).lower(), "%a %b %d %H:%M:%S %Z %Y")
             setattr(self, ename.lower(), value)
 
 

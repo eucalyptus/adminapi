@@ -1,9 +1,11 @@
 
-
-import dns.resolver
+import sys
 import time
 from cloud_admin.services.services import EucaComponentService
-
+try:
+    from dns import resolver
+except ImportError as IE:
+    sys.stderr.write('Failed to import dns.resolver:"{0}"'.format(IE))
 
 class EucaDnsService(EucaComponentService):
 
@@ -16,7 +18,7 @@ class EucaDnsService(EucaComponentService):
     def resolver(self):
         if not self._resolver:
             if self.host:
-                self._resolver = dns.resolver.Resolver(configure=False)
+                self._resolver = resolver.Resolver(configure=False)
                 self._resolver.nameservers = [self.host]
         return self._resolver
 
@@ -41,9 +43,9 @@ class EucaDnsService(EucaComponentService):
                                   .format(name, self.resolver.nameservers))
                 ans = self.resolver.query(name)
                 return str(ans[0])
-            except dns.resolver.NXDOMAIN:
+            except resolver.NXDOMAIN:
                 raise RuntimeError("Unable to resolve hostname `{0}'".format(name))
-            except dns.resolver.NoNameservers:
+            except resolver.NoNameservers:
                 # Note that this usually means our DNS server returned a malformed message
                 pass
             finally:
