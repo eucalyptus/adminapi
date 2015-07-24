@@ -51,9 +51,8 @@ class Eulogger(logging.Logger):
     # constructor for the Eulogger
 
     def __init__(self,
+                 identifier,
                  parent_logger_name='eutester',
-                 name=None,
-                 identifier=None,
                  stdout_level="debug",
                  stdout_format=None,
                  logfile="",
@@ -97,26 +96,21 @@ class Eulogger(logging.Logger):
         self.logfile_level = getattr(logging, logfile_level.upper(), logging.DEBUG)
         self.parent_logger_name = parent_logger_name
         # Create a logger
-        if not name:
-            if identifier:
-                name = "{0}".format(identifier)
-            else:
-                name = 'eulogger'
+        self.identifier = identifier
+        name = str(identifier).replace(".", ":")
+        self.name = "{0}.{1}".format(self.parent_logger_name, name)
 
-            name = str(name).replace(".", ":")
-            name = "{0}.{1}".format(self.parent_logger_name, name)
-        self.identifier = identifier or name
 
         parent_logger = logging.getLogger(self.parent_logger_name)
+        self.parent = parent_logger
         if hasattr(parent_logger, 'getChild'):
             childlogger = parent_logger.getChild(name)
+        else:
+            childlogger = self._getChild(parent_logger, name)
+        if childlogger:
             self.__dict__.update(childlogger.__dict__)
-        self.parent = self.parent or parent_logger
-        self.logfile = os.path.join(logfile)
-        id_string = ""
-        if identifier:
-            id_string = " [{0}] ".format(identifier)
 
+        self.logfile = os.path.join(logfile)
         self._default_format = stdout_format or logging.Formatter(
             '[%(asctime)s][%(levelname)s]%(message)s')
         self.file_format = file_format or self._default_format
@@ -148,7 +142,10 @@ class Eulogger(logging.Logger):
 
     def _log(self, level, msg, args, exc_info=None, extra=None):
         msg = "[{0}]: {1}".format(self.identifier, msg)
-        return super(Eulogger, self)._log(level, msg, args, exc_info=exc_info, extra=extra)
+        try:
+            return super(Eulogger, self)._log(level, msg, args, exc_info=exc_info, extra=extra)
+        except TypeError:
+            return logging.Logger._log(self, level, msg, args, exc_info=exc_info, extra=extra)
 
     def getparent_files(self):
         files = []
@@ -172,14 +169,18 @@ class Eulogger(logging.Logger):
                     handler.setLevel(level)
         self.stdout_level = level
 
-    def getChild(self, suffix):
-        func = getattr(logging.Logger, 'getChild')
+    @staticmethod
+    def _getChild(logger, suffix):
+        func = getattr(logging.Logger, 'getChild', None)
         if func:
-            return func(self, suffix)
+            return func(logger, suffix)
         else:
-            if self.root is not self:
-                suffix = '.'.join((self.name, suffix))
-            return self.manager.getLogger(suffix)
+            if logger.root is not logger:
+                suffix = '.'.join((logger.name, suffix))
+            return logger.manager.getLogger(suffix)
+
+    def getChild(self, suffix):
+        return self._getChild(self, suffix)
 
 
 class AllowLoggerByName(logging.Filter):
