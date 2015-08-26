@@ -1,5 +1,6 @@
 
 from boto.resultset import ResultSet
+from boto.exception import BotoServerError
 from cloud_admin.services import EucaBaseObj, EucaEmpyreanResponse
 from cloud_utils.log_utils import markup, get_traceback
 from cloud_utils.net_utils.sshconnection import get_ipv4_lookup
@@ -82,15 +83,21 @@ def SHOW_SERVICES(connection, services=None, service_type=None, show_part=False,
         else:
             service_types = all_service_types
         if partition:
-            if partition in connection.get_all_cluster_names():
-                new_list = []
-                for s_type in service_types:
-                    if str(s_type.partitioned).lower().strip() == "true":
-                        new_list.append(s_type)
-                service_types = new_list
-                if not service_types:
-                    raise ValueError('No partitioned services found using filter service_type:'
-                                     '"{0}"'.format(service_type))
+            try:
+                if partition in connection.get_all_cluster_names():
+                    new_list = []
+                    for s_type in service_types:
+                        if str(s_type.partitioned).lower().strip() == "true":
+                            new_list.append(s_type)
+                    service_types = new_list
+                    if not service_types:
+                        raise ValueError('No partitioned services found using filter service_type:'
+                                         '"{0}"'.format(service_type))
+            except BotoServerError as BE:
+                if BE.status == 403:
+                    pass
+                else:
+                    raise
             else:
                 # If this is filtering a partition that is not a zone/cluster than
                 # dont show unregistered service types. As of 4/30/15 the API does not

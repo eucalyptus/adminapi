@@ -178,7 +178,6 @@ def get_traceback():
         return str(buf)
 
 
-@staticmethod
 def get_terminal_size():
     '''
     Attempts to get terminal size. Currently only Linux.
@@ -282,3 +281,16 @@ def printinfo(func):
             print 'printinfo method decorator error:'+str(e)
         return func(*func_args, **func_kwargs)
     return methdecor
+
+def get_line(length=None):
+    line = ""
+    if not length:
+        try:
+            length = get_terminal_size()[1]
+            if length <= 1:
+                length = 80
+        except:
+            length = 80
+    for x in xrange(0,int(length-2)):
+        line += "-"
+        return "\n" + line + "\n"

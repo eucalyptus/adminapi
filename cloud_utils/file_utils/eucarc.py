@@ -1,9 +1,11 @@
 
-import re
+import operator
 import os
-from urlparse import urljoin
+import re
+from urlparse import urljoin, urlparse
 from prettytable import PrettyTable
 from cloud_utils.log_utils.eulogger import Eulogger
+from cloud_utils.net_utils.sshconnection import CommandExitCodeException
 
 
 class Eucarc(object):
@@ -34,15 +36,19 @@ class Eucarc(object):
         self._account_name = None
         self._account_id = None
         self._user_name = None
+        self._access_key = None
+        self._secret_key = None
 
-        self.aws_access_key = None
-        self.aws_auto_scaling_url = None
-        self.aws_cloudformation_url = None
-        self.aws_cloudwatch_url = None
+        self._ec2_url = None
+        self._iam_url = None
+        self._cloudwatch_url = None
+        self._elb_url = None
+        self._cloudformation_url = None
+        self._autoscaling_url = None
+        self._simpleworkflow_url = None
+
         self.aws_credential_file = None
-        self.aws_elb_url = None
-        self.aws_iam_url = None
-        self.aws_secret_key = None
+
         self.aws_simpleworkflow_url = None
         self.ec2_access_key = None
         self.ec2_cert = None
@@ -50,7 +56,6 @@ class Eucarc(object):
         self.ec2_private_key = None
         self.ec2_secret_key = None
         self.ec2_user_id = None
-        self.ec2_url = None
         self.eucalyptus_cert = None
         self.eustore_url = 'http://emis.eucalyptus.com/'
 
@@ -102,6 +107,139 @@ class Eucarc(object):
     def user_name(self, value):
         self._user_name = value
 
+    @property
+    def access_key(self):
+        return self._access_key
+
+    @access_key.setter
+    def access_key(self, value):
+        self._access_key = value
+
+    @property
+    def secret_key(self):
+        return self._secret_key
+
+    @secret_key.setter
+    def secret_key(self, value):
+        self._secret_key = value
+
+
+    ##############################################################################################
+    # Service URLs
+    ##############################################################################################
+    # EC2
+    @property
+    def ec2_url(self):
+        return self._ec2_url
+
+    @ec2_url.setter
+    def ec2_url(self, url):
+        self._ec2_url = url
+
+    # AutoScaling
+    @property
+    def auto_scaling_url(self):
+        return self._autoscaling_url
+
+    @auto_scaling_url.setter
+    def auto_scaling_url(self, url):
+        self._autoscaling_url = url
+
+    @property
+    def aws_auto_scaling_url(self):
+        return self._autoscaling_url
+
+    @aws_auto_scaling_url.setter
+    def aws_auto_scaling_url(self, url):
+        self._autoscaling_url = url
+
+    # IAM
+    @property
+    def iam_url(self):
+        return self._iam_url
+
+    @iam_url.setter
+    def iam_url(self, url):
+        self._iam_url = url
+
+    #@property
+    #def aws_iam_url(self):
+    #    return self._iam_url
+
+    @iam_url.setter
+    def aws_iam_url(self, url):
+        self._iam_url = url
+
+    # Cloud Formation
+    @property
+    def aws_cloudformation_url(self):
+        return self._cloudformation_url
+
+    @aws_cloudformation_url.setter
+    def aws_cloudformation_url(self, url):
+        self._cloudformation_url = url
+
+    @property
+    def cloudformation_url(self):
+        return self._cloudformation_url
+
+    @cloudformation_url.setter
+    def cloudformation_url(self, url):
+        self._cloudformation_url = url
+
+    #Cloud Watch
+    @property
+    def aws_cloudwatch_url(self):
+        return self._cloudwatch_url
+
+    @aws_cloudwatch_url.setter
+    def aws_cloudwatch_url(self, url):
+        self._cloudwatch_url = url
+
+    @property
+    def cloudwatch_url(self):
+        return self._cloudwatch_url
+
+    @cloudwatch_url.setter
+    def cloudwatch_url(self, url):
+        self._cloudwatch_url = url
+
+    # ELB
+    @property
+    def aws_elb_url(self):
+        return self._elb_url
+
+    @aws_elb_url.setter
+    def aws_elb_url(self, url):
+        self._elb_url = url
+
+    @property
+    def elb_url(self):
+        return self._elb_url
+
+    @elb_url.setter
+    def elb_url(self, url):
+        self._elb_url = url
+
+    # Simple Work Flow
+    @property
+    def aws_simpleworkflow_url(self):
+        return self._simpleworkflow_url
+
+    @aws_simpleworkflow_url.setter
+    def aws_simpleworkflow_url(self, url):
+        self._simpleworkflow_url = url
+
+    @property
+    def simpleworkflow_url(self):
+        return self._simpleworkflow_url
+
+    @simpleworkflow_url.setter
+    def simpleworkflow_url(self, url):
+        self._simpleworkflow_url = url
+
+
+
     ##############################################################################################
     # With the EC2 prefix...
     ##############################################################################################
@@ -129,6 +267,27 @@ class Eucarc(object):
     def ec2_account_name(self, value):
         self._account_name = value
 
+    @property
+    def ec2_access_key(self):
+        return self._access_key
+
+    @ec2_access_key.setter
+    def ec2_access_key(self, value):
+        self._access_key = value
+
+    @property
+    def ec2_secret_key(self):
+        return self._secret_key
+
+    @ec2_secret_key.setter
+    def ec2_secret_key(self, value):
+        self._secret_key = value
+
+
+
+
+
+
     ##############################################################################################
     # With the AWS prefix...
     ##############################################################################################
@@ -155,6 +314,22 @@ class Eucarc(object):
     @aws_user_name.setter
     def aws_user_name(self, value):
         self._user_name = value
+
+    @property
+    def aws_access_key(self):
+        return self._access_key
+
+    @aws_access_key.setter
+    def aws_access_key(self, value):
+        self._access_key = value
+
+    @property
+    def aws_secret_key(self):
+        return self._secret_key
+
+    @aws_secret_key.setter
+    def aws_secret_key(self, value):
+        self._secret_key = value
 
     # Hold these values as properties so the dict only returns cred info, not obj info...
     @property
@@ -201,7 +376,8 @@ class Eucarc(object):
                 lines = string
             for line in lines:
                 if line:
-                    match = re.search('^\s*export\s+(\w+)=\s*(\S+)$', line)
+                    match = (re.search('^\s*export\s+(\w+)=\s*(\S+)$', line) or
+                             re.search('^\s*(\S+)\s*=\s*(\S+)$', line))
                     if not match:
                         # This line does not match our expected format, add it to the messages
                         message += line + "\n"
@@ -220,8 +396,9 @@ class Eucarc(object):
                         if not (key and value):
                             raise ValueError('Fix me! Could not find key=value, in this line:"{0}"'
                                              .format(line))
-                        self.__setattr__(key.lower(), value)
-                        new_dict[key.lower()] = value
+                        key = key.lower().replace('-', '_')
+                        self.__setattr__(key, value)
+                        new_dict[key] = value
             if message:
                 self._unparsed_lines = message
                 new_dict['message'] = message
@@ -245,25 +422,47 @@ class Eucarc(object):
             keysdir = self._keysdir or os.path.dirname(filepath)
         sshconnection = sshconnection or self._sshconnection
         if sshconnection:
+            # Assume this is a remote file...
             sftppath = "sftp://{0}@{1}/".format(sshconnection.username, sshconnection.host)
+            for remotepath in [filepath, os.path.join(filepath, 'eucarc')]:
+                try:
+                    sshconnection.sys('[ -f {0} ]'.format(remotepath), code=0)
+                    break
+                except CommandExitCodeException:
+                    remotepath = None
+            if not remotepath:
+                raise ValueError('Remote File not found on host:"{0}" at path(s):"{1}", or "{2}"'
+                                     .format(sshconnection.host, filepath,
+                                             os.path.join(filepath, 'eucarc')))
             keysdir = urljoin(sftppath, keysdir)
             self._keysdir = keysdir
-            string = sshconnection.sys('cat {0}'.format(filepath), listformat=False, code=0)
+            string = sshconnection.sys('cat {0}'.format(remotepath), listformat=False, code=0)
         else:
+            # This is a local file...
             if not re.search('\S+', filepath):
                 filepath = os.path.curdir
             filepath = os.path.realpath(filepath)
+            if not os.path.isfile(filepath):
+                orig_file_path = filepath
+                filepath = os.path.join(filepath, 'eucarc')
+                if not os.path.isfile(filepath):
+                    raise ValueError('File not found at path(s):"{0}", or "{1}"'
+                                     .format(orig_file_path, filepath))
             f = open(filepath)
             with f:
                 string = f.read()
         return self._from_string(string, keysdir=keysdir)
 
-    def show(self, print_method=None, print_table=True):
+    def show(self, search=None, print_method=None, print_table=True):
         """
         Show the eucarc key, values in a table format
         :param print_table: bool, if true will print the table to self._debug, else returns the
                             table obj
         """
+        match_op = operator.truth
+        if search and str(search).startswith('!'):
+            search = str(search).lstrip('!')
+            match_op = operator.not_
         print_method = print_method or self.log.info
         pt = PrettyTable(['KEY', 'VALUE'])
         pt.hrules = 1
@@ -272,8 +471,12 @@ class Eucarc(object):
         pt.max_width['VALUE'] = 85
         pt.max_width['KEY'] = 35
         for key, value in self.get_eucarc_attrs().iteritems():
-            pt.add_row([key, self.__dict__[key]])
-        pt.add_row(['UNPARSED LINES', self._unparsed_lines])
+            if value is None or isinstance(value, basestring):
+                if not search or match_op(re.search(str(search), key) or \
+                        (value and re.search(str(search), value))):
+                    pt.add_row([key, value])
+        if not search or (match_op(re.search(search, self._unparsed_lines))):
+            pt.add_row(['UNPARSED LINES', self._unparsed_lines])
         if print_table:
             print_method("\n" + str(pt) + "\n")
         else:
@@ -290,6 +493,9 @@ class Eucarc(object):
                         break
                 if not skip:
                     ret_dict[key] = value
+        for key in vars(Eucarc):
+            if type(getattr(Eucarc, key)) == property:
+                ret_dict[key] = getattr(self, key)
         return ret_dict
 
     def get_urls(self):

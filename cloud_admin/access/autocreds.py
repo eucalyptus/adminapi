@@ -1,5 +1,5 @@
 """
-AutoCreds is a convenience class which attempt to provide utilities for reading in
+AutoCreds is a convenience class which attempts to provide utilities for reading in
 credentials data from multiple sources.
 The auto_create flag (set to True by default) attempts  to automatically produce credentials
 based upon the information provided to this AutoCreds obj.
@@ -8,7 +8,7 @@ based upon the information provided to this AutoCreds obj.
         - If credpath was provided the local file system will first be tried for existing
         credentials
         - If aws access and secret keys were provided allong with hostname, will attempt to
-        derivce service credpaths from the Eucalyptus Admin api.
+        derive service credpaths from the Eucalyptus Admin api.
         -Finally if a hostname was provided an ssh attempt will be made (with any other
          connection kwargs provided)to fetch from the remote system as well.
          If password or keypath was not provided, this assumes keys have been sync'd between the
@@ -297,6 +297,17 @@ class AutoCreds(Eucarc):
         self.clc_machine = machine
         return machine
 
+    def assume_role_on_remote_clc(self, machine):
+        machine = machine or self.clc_machine
+        cred_string = []
+        out = machine.sys('clcadmin-assume-system-credentials', code=0)
+        for line in out:
+            line = line.strip(';')
+            line = str(line).replace('127.0.0.1', machine.hostname)
+            cred_string.append(line)
+        return self._from_string(string=cred_string)
+
+
     def auto_find_credentials(self):
         """
         Convenience method which attempts to automatically produce credentials based upon the
@@ -338,6 +349,17 @@ class AutoCreds(Eucarc):
                                .format(get_traceback(), str(RE)))
                     self._close_adminpi()
 
+        def try_assume_admin_on_clc(self):
+            if not self.aws_secret_key and not self.aws_access_key:
+                try:
+                    self.assume_role_on_remote_clc()
+                    res = try_serviceconnection()
+                    return res
+                except Exception as AE:
+                    self.debug('{0}\nFailed to update creds using '
+                               '"clcadmin-assume-system-credentials", err:"{1}"'
+                               .format(get_traceback(), str(AE)))
+
         def try_remote(self):
             if self._clc_ip and self._credpath:
                 try:
@@ -377,7 +399,8 @@ class AutoCreds(Eucarc):
                         self.debug('{0}\nFailed to fetch creds from clc db, err:{1}'
                                    .format(get_traceback(), str(RE)))
 
-        default_order = [try_local, try_serviceconnection, try_remote, try_clc_db]
+        default_order = [try_local, try_serviceconnection, try_assume_admin_on_clc,
+                         try_remote, try_clc_db]
         if self._clc_ip and self._credpath and self._has_updated_connect_args:
             # if any ssh related arguements were provided, assume the user would like
             # to try remote first
@@ -436,8 +459,9 @@ class AutoCreds(Eucarc):
                 self.ec2_account_number = ret['EC2_ACCOUNT_NUMBER']
                 self.ec2_account_name = ret['EC2_ACCOUNT_NAME']
             except Exception as PE:
-                self.log.error('Output:\n{0}\nFailed parsing creds lookup output, err:{1}'
-                               .format("\n".join(qout), str(PE)))
+                self.log.error('Output:\n{0}\nFailed parsing creds for account:"{0}", '
+                               'user:"{1}".\nLookup commands output:{2}'
+                               .format(account, user, "\n".join(qout), str(PE)))
                 raise PE
         return ret
 
