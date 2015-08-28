@@ -17,28 +17,28 @@
     administrative tasks, etc..
 
 
-Installation
-------
-A 'c' compiler may need to be installed beforehand (for Paramiko/ssh dependencies):
-If pip/easy_install is not available in your environment use your package manager to
-install python-setuptools as well:
+    Installation
+    ------
+    A 'c' compiler may need to be installed beforehand (for Paramiko/ssh dependencies):
+    If pip/easy_install is not available in your environment use your package manager to
+    install python-setuptools as well:
 
-    yum install python-setuptools gcc python-devel git
-    apt-get install python-setuptools gcc python-dev git
+        yum install python-setuptools gcc python-devel git
+        apt-get install python-setuptools gcc python-dev git
 
-Installing using pip or easy_install:
+    Installing using pip or easy_install:
 
-    pip install adminapi
-    - or -
-    easy_install adminapi
+        pip install adminapi
+        - or -
+        easy_install adminapi
 
 
-Installing from source:
-For development purposes you can then clone the code from github, make changes, re-install, etc..
+    Installing from source:
+    For development purposes you can then clone the code from github, make changes, re-install, etc..
 
-    git clone https://github.com/bigschwan/adminapi.git
-    cd adminapi
-    [Optional: CHANGE SOME CODE]
-    sudo python setup.py install
+        git clone https://github.com/bigschwan/adminapi.git
+        cd adminapi
+        [Optional: CHANGE SOME CODE]
+        sudo python setup.py install
 
 
