@@ -2,7 +2,7 @@
 
 Eucalyptus Cloud Services and General System Administrative Utilities
 
-See subdirectories for additional information:
+See READMEs and examples in subdirectories for additional information:
 
 
 Installation
