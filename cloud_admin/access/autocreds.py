@@ -297,12 +297,13 @@ class AutoCreds(Eucarc):
         self.clc_machine = machine
         return machine
 
-    def assume_role_on_remote_clc(self, machine):
+    def assume_role_on_remote_clc(self, machine=None):
         machine = machine or self.clc_machine
         cred_string = []
         out = machine.sys('clcadmin-assume-system-credentials', code=0)
         for line in out:
-            line = line.strip(';')
+            if line:
+                line = line.strip(';')
             line = str(line).replace('127.0.0.1', machine.hostname)
             cred_string.append(line)
         return self._from_string(string=cred_string)
@@ -353,7 +354,7 @@ class AutoCreds(Eucarc):
             if not self.aws_secret_key and not self.aws_access_key:
                 try:
                     self.assume_role_on_remote_clc()
-                    res = try_serviceconnection()
+                    res = try_serviceconnection(self)
                     return res
                 except Exception as AE:
                     self.debug('{0}\nFailed to update creds using '
