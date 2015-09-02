@@ -92,8 +92,14 @@ class Eulogger(logging.Logger):
                    .format(str(parent_logger_name), str(identifier), str(stdout_level),
                            str(stdout_format), str(logfile), str(logfile_level), str(file_format)))
         # Create or fetch existing logger of name 'logger_name
-        self.stdout_level = getattr(logging, stdout_level.upper(), logging.DEBUG)
-        self.logfile_level = getattr(logging, logfile_level.upper(), logging.DEBUG)
+        if isinstance(stdout_level, basestring):
+            self.stdout_level = getattr(logging, stdout_level.upper(), logging.DEBUG)
+        else:
+            self.stdout_level = stdout_level or logging.DEBUG
+        if isinstance(logfile_level, basestring):
+            self.logfile_level = getattr(logging, logfile_level.upper(), logging.DEBUG)
+        else:
+            self.logfile_level = logfile_level or logging.DEBUG
         self.parent_logger_name = parent_logger_name
         # Create a logger
         self.identifier = identifier

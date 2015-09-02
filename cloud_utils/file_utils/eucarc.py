@@ -2,6 +2,7 @@
 import operator
 import os
 import re
+from collections import OrderedDict
 from urlparse import urljoin, urlparse
 from prettytable import PrettyTable
 from cloud_utils.log_utils.eulogger import Eulogger
@@ -470,7 +471,8 @@ class Eucarc(object):
         pt.header = False
         pt.max_width['VALUE'] = 85
         pt.max_width['KEY'] = 35
-        for key, value in self.get_eucarc_attrs().iteritems():
+        attrs = OrderedDict(sorted(self.get_eucarc_attrs().items()))
+        for key, value in attrs.iteritems():
             if value is None or isinstance(value, basestring):
                 if not search or match_op(re.search(str(search), key) or \
                         (value and re.search(str(search), value))):
