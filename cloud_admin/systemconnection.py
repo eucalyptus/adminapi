@@ -238,7 +238,7 @@ class SystemConnection(ServiceConnection):
         return [1, 93]
 
     def show_hosts(self, hosts=None, partition=None, service_type=None, serv_columns=None,
-                   update=True, print_method=None, print_table=True):
+                   update=True, print_method=None, print_table=True, save_file=None):
         print_method = print_method or self._show_method
         ins_id_len = 10
         ins_type_len = 13
@@ -358,6 +358,9 @@ class SystemConnection(ServiceConnection):
             threads.append(t)
         for t in threads:
             t.join()
+        if save_file:
+            with open(save_file, 'w') as sf:
+                sf.write("\n{0}\n".format(pt.get_string()))
         if print_table:
             # print_method("\n{0}\n".format(pt.get_string(sortby=pt.field_names[1])))
             print_method("\n{0}\n".format(pt.get_string()))

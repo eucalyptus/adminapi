@@ -702,9 +702,9 @@ class Machine(object):
             per_used = "{0:.1f}".format((used / float(total)) * 100)
             per_free = "{0:.1f}".format((free / float(total)) * 100)
             per_swap = "{0:.1f}".format((swap / float(total)) * 100)
-            sys_pt.add_row([" Used:", "{0}".format(used), "{0}%".format(per_used)])
-            sys_pt.add_row([" Free:", "{0}".format(free), "{0}%".format(per_free)])
-            sys_pt.add_row([" Swap:", "{0}".format(swap), "{0}%".format(per_swap)])
+            sys_pt.add_row([" Used:", "{0}".format(used), " {0}%".format(per_used)])
+            sys_pt.add_row([" Free:", "{0}".format(free), " {0}%".format(per_free)])
+            sys_pt.add_row([" Swap:", "{0}".format(swap), " {0}%".format(per_swap)])
         if cpu:
             sys_pt.add_row([markup("CPU:", [1, 4]), "", ""])
             cpu_info = self.cpu_info
