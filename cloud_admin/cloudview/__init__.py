@@ -6,7 +6,6 @@ import yaml
 from shutil import copyfile
 from cloud_utils.system_utils.machine import Machine
 
-
 class Namespace(object):
     """
     Convert dict (if provided) into attributes and return a somewhat
@@ -34,7 +33,8 @@ class Namespace(object):
         return vars(self).keys()
 
     def _filtered_dict(self):
-        return {k: v for (k, v) in self.__dict__.iteritems() if not k.startswith('_')}
+        mydict = dict((k, v) for k, v in self.__dict__.iteritems() if not k.startswith('_'))
+        return mydict
 
     def do_default(self):
         # Removes all values not starting with "_" from dict
