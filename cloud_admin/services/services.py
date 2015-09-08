@@ -5,6 +5,7 @@ from cloud_admin.services import EucaBaseObj, EucaEmpyreanResponse
 from cloud_utils.log_utils import markup, get_traceback
 from cloud_utils.net_utils.sshconnection import get_ipv4_lookup
 from datetime import datetime
+import dateutil.parser as dateparser
 from prettytable import PrettyTable, ALL
 from operator import itemgetter
 from urlparse import urlparse
@@ -757,7 +758,7 @@ class EucaServiceStatus(EucaBaseObj):
                 self.name = value
             if ename == 'timestamp':
                 try:
-                    self.datetime = datetime.strptime(str(value), "%a %b %d %H:%M:%S %Z %Y")
+                    self.datetime = dateparser.parse(str(value))
                 except ValueError as VE:
                     sys.stderr.write("{0}\n".format(VE))
                     sys.stderr.flush()

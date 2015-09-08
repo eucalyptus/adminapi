@@ -35,7 +35,7 @@ In Yaml...
 
 ```
 In [2]: from cloud_admin.cloudview.eucalyptusblock import EucalyptusBlock
-In [3]: from cloud_admin.cloudview.systemconnection import SystemConnection
+In [3]: from cloud_admin.systemconnection import SystemConnection
 In [4]: sc = SystemConnection('10.111.5.156', password='foobar')
 In [5]: eb = EucalyptusBlock(sc)
 In [6]: eb.build_active_config(do_props=False)
@@ -128,3 +128,4 @@ In [13]: print eb.to_json()
 }
 
 ```
+
