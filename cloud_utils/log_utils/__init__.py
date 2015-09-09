@@ -268,8 +268,9 @@ def printinfo(func):
                           ":" + str(func.func_code.co_firstlineno) + ")Starting method: " + \
                           str(func.func_name) + '(' + arg_string + kw_string + ')'
             debugmethod = None
-            if selfobj and hasattr(selfobj, 'debug'):
-                debug = getattr(selfobj, 'debug')
+            if selfobj and hasattr(selfobj, 'logger'):
+                logger = getattr(selfobj, 'logger')
+                debug = getattr(logger, 'debug')
                 if isinstance(debug, types.MethodType):
                     debugmethod = debug
             if debugmethod:
