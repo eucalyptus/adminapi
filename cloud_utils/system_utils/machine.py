@@ -80,7 +80,7 @@ class Machine(object):
         self._free_stats = {}
         self._cpu_stats = {}
         self._sys_stats_interval = 5
-        self.hostname = hostname
+        self._hostname = hostname
         self.arch = arch
         self._do_ssh_connect = do_ssh_connect
         self.username = username
@@ -114,6 +114,19 @@ class Machine(object):
 
     def __repr__(self):
         return "{0}:{1}".format(self.__class__.__name__, self.hostname)
+
+    @property
+    def hostname(self):
+        if hasattr(self, 'ip_address'):
+            return self.ip_address
+        if hasattr(self, '_hostname'):
+            return self._hostname
+        return None
+
+    @hostname.setter
+    def hostname(self, hostname):
+        self._hostname = hostname
+
 
     @property
     def _identifier(self):
