@@ -20,6 +20,7 @@ def test_port_status(ip,
                      recv_size=0,
                      send_buf=None,
                      debug=None,
+                     logger=None,
                      verbose=True):
         '''
         Attempts to connect to tcp port at ip:port within timeout seconds
@@ -29,7 +30,7 @@ def test_port_status(ip,
         :param tcp: Use tcp in this test
         :param recv_size: size of buffer to read from socket
         :param send_buf: buffer to send
-        :param debug: bool, print debug info w/ 'print'
+        :param debug: debug method or print debug info w/ 'print'
         :param verbose: bool, print verbose info
         :returns buffer read in
         '''

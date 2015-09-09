@@ -7,6 +7,7 @@ from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_utils.log_utils import get_traceback
 from cloud_utils.log_utils import printinfo, markup
 from cloud_utils.file_utils import render_file_template
+from cloud_utils.net_utils import test_port_status
 from cloud_utils.net_utils.sshconnection import (
     CommandExitCodeException,
     SshCbReturn,
@@ -15,6 +16,7 @@ from cloud_utils.net_utils.sshconnection import (
 import re
 import os
 from prettytable import PrettyTable
+from socket import error as socketerror
 import sys
 import tempfile
 from repoutils import Yum, Apt
@@ -319,8 +321,22 @@ class Machine(object):
     @property
     def ssh(self):
         if not self._ssh:
+            hostname = self.ssh_connect_kwargs.get('host', None)
+            if not hostname:
+                raise ValueError('Host not provided in ssh_connect_kwargs for machine')
             if self._do_ssh_connect:
-                self._ssh = SshConnection(**self.ssh_connect_kwargs)
+                port_status = False
+                for x in xrange(0, 3):
+                    try:
+                        test_port_status(hostname, port=22, tcp=True, debug=self.log.debug)
+                        port_status = True
+                        break
+                    except socketerror:
+                        pass
+                if port_status:
+                    self._ssh = SshConnection(**self.ssh_connect_kwargs)
+                else:
+                    raise RuntimeError('Could reach machine:"{0}"  at tcp/22'.format(hostname))
         return self._ssh
 
     @ssh.setter
