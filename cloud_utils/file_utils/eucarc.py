@@ -12,7 +12,8 @@ from cloud_utils.net_utils.sshconnection import CommandExitCodeException
 class Eucarc(object):
     _KEY_DIR_STR = '\${EUCA_KEY_DIR}'
 
-    def __init__(self, filepath=None, string=None, sshconnection=None, keysdir=None, logger=None):
+    def __init__(self, filepath=None, string=None, sshconnection=None, keysdir=None, logger=None,
+                 loglevel='INFO'):
         """
         Will populate a eucarc obj with values from a local file, remote file, or string buffer.
         The parser expect values in the following format:
@@ -65,10 +66,11 @@ class Eucarc(object):
 
         # End of init default eucarc attrs
         if not logger:
-            logger = Eulogger(identifier=self.__class__.__name__)
+            logger = Eulogger(identifier=self.__class__.__name__, stdout_level=loglevel)
+        logger.set_stdout_loglevel(loglevel)
         self._log = logger
         self._debug = self.log.debug
-        self._filepath = filepath
+        self._credpath = filepath
         if keysdir is None:
             keysdir = filepath
         self._keysdir = keysdir
@@ -163,13 +165,14 @@ class Eucarc(object):
     def iam_url(self, url):
         self._iam_url = url
 
-    #@property
-    #def aws_iam_url(self):
-    #    return self._iam_url
+    @property
+    def aws_iam_url(self):
+        return self._iam_url
 
-    @iam_url.setter
+    @aws_iam_url.setter
     def aws_iam_url(self, url):
         self._iam_url = url
+
 
     # Cloud Formation
     @property
@@ -418,7 +421,7 @@ class Eucarc(object):
                        the filepath, but when parsing from a string buffer filepath is unknown
         :returns dict of attributes
         """
-        filepath = filepath or self._filepath
+        filepath = filepath or self._credpath
         if keysdir is None:
             keysdir = self._keysdir or os.path.dirname(filepath)
         sshconnection = sshconnection or self._sshconnection
@@ -497,7 +500,10 @@ class Eucarc(object):
                     ret_dict[key] = value
         for key in vars(Eucarc):
             if type(getattr(Eucarc, key)) == property:
-                ret_dict[key] = getattr(self, key)
+                try:
+                    ret_dict[key] = getattr(self, key)
+                except Exception as PE:
+                    self.log.error('Failed to get property attr:"{0}", err:"{1}"'.format(key, PE))
         return ret_dict
 
     def get_urls(self):

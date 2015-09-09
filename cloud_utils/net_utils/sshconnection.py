@@ -250,7 +250,8 @@ class SshConnection():
         :param debug_connect: - optional - boolean to flag debug output on or off for connection
                                 related operations
         """
-
+        if not host:
+            raise ValueError('SshConnection.__init__(). Hostname not populated:"{0}"'.format(host))
         self.host = host
         self.username = username
         self.password = password
@@ -708,6 +709,8 @@ class SshConnection():
         :param port: - optional - port to connect to, default 22
         :param verbose: - optional - enable verbose debug output
         """
+        if not hostname:
+            raise ValueError('get_ssh_connection. Hostname not populated:"{0}"'.format(hostname))
         connected = False
         iplist = []
         ip = None

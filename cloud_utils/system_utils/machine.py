@@ -27,6 +27,7 @@ class Machine(object):
                  username="root",
                  password=None,
                  keypath=None,
+                 sshconnection=None,
                  proxy_hostname=None,
                  proxy_username='root',
                  proxy_password=None,
@@ -67,7 +68,7 @@ class Machine(object):
         :param verbose: bool option to enable/disable some verbose logging
         """
         self._arch = arch
-        self._ssh = None
+        self._ssh = sshconnection
         self._sftp = None
         self._distroname = distro
         self._distrover = distro_ver
