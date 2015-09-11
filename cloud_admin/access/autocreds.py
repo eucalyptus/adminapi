@@ -342,7 +342,7 @@ class AutoCreds(Eucarc):
         """
 
         def try_from_file(self):
-            self.log.debug('Trying from local file...')
+            self.log.debug('Trying creds from local file...')
             if self._credpath:
                 try:
                     res = self.get_local_eucarc(credpath=self._credpath)
@@ -353,7 +353,7 @@ class AutoCreds(Eucarc):
                     pass
 
         def try_serviceconnection(self):
-            self.log.debug('Trying from service connection...')
+            self.log.debug('Trying creds from service connection...')
             if self.aws_secret_key and self.aws_access_key and self._clc_ip:
                 self._connect_services()
                 try:
@@ -367,7 +367,7 @@ class AutoCreds(Eucarc):
                     self._close_adminpi()
 
         def try_assume_admin_on_clc(self):
-            self.log.debug('Trying from assume admin role on clc...')
+            self.log.debug('Trying creds from assume admin role on clc...')
             if not self.aws_secret_key and not self.aws_access_key:
                 try:
                     self.assume_role_on_remote_clc()
@@ -385,7 +385,7 @@ class AutoCreds(Eucarc):
                                .format(get_traceback(), str(AE)))
 
         def try_remote(self):
-            self.log.debug('Trying from remote machine at credpath...')
+            self.log.debug('Trying creds from remote machine at credpath...')
             if self.creds_machine and self._credpath:
                 try:
                     machine = self.creds_machine or self.connect_to_creds_machine()
@@ -405,7 +405,7 @@ class AutoCreds(Eucarc):
                                .format(get_traceback(), str(e)))
 
         def try_clc_db(self):
-            self.log.debug('trying clc db...')
+            self.log.debug('Trying creds from CLC DB...')
             if self.creds_machine and self.aws_account_name and self.aws_user_name:
                 machine = self.creds_machine or self.connect_to_creds_machine()
                 if machine:
@@ -461,7 +461,10 @@ class AutoCreds(Eucarc):
         passphrase = None or 'eucalyptus'
         if do_cert is None:
             do_cert = self._has_existing_cert
-        eucahome = eucahome or EucaHost._get_eucalyptus_home(machine) or '/'
+        if hasattr(machine, 'eucalyptus_home'):
+            eucahome = machine.eucalyptus_home
+        else:
+            eucahome = eucahome or EucaHost._get_eucalyptus_home(machine) or '/'
         EucaP12File = p12file or os.path.join(eucahome, '/var/lib/eucalyptus/keys/euca.p12')
         CloudPKFile = pkfile or os.path.join(eucahome, '/var/lib/eucalyptus/keys/cloud-pk.pem')
         cmd = ("echo -n '{0}' | openssl SHA256  -sign {1} | sha256sum"

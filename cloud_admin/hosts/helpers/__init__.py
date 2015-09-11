@@ -9,4 +9,7 @@ class EucaMachineHelpers(object):
         self.log = eucahost.log
         self.debug = self.log.debug
         self.services = getattr(eucahost, 'services', [])
-        self.eucalyptus_conf = eucahost.eucalyptus_conf
+
+    @property
+    def eucalyptus_conf(self):
+        return self.eucahost.eucalyptus_conf

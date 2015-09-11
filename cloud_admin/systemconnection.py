@@ -119,8 +119,6 @@ class SystemConnection(ServiceConnection):
             t = threading.Thread(target=add_host, args=(ip, services))
             t.start()
             threads.append(t)
-            # self._eucahosts[ip] = EucaHost(connection=self, hostname=ip, services=services,
-            #                               **connect_kwargs)
         for t in threads:
             t.join()
 

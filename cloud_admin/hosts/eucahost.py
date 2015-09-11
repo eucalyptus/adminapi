@@ -47,6 +47,7 @@ class EucaHost(Machine):
         self._eucalyptus_repo_file = None
         self._eucalyptus_enterprise_repo_file = None
         self._euca2ools_repo_file = None
+        self._eucalyptus_home = None
         self.euca_source = None
         self.components = {}
         services = services or []
@@ -223,7 +224,7 @@ class EucaHost(Machine):
     def get_eucanetd_service_pid(self):
         ret = None
         try:
-            path = os.path.join(self.get_eucalyptus_home(), 'var/run/eucalyptus/eucanetd.pid')
+            path = os.path.join(self.eucalyptus_home, 'var/run/eucalyptus/eucanetd.pid')
             out = self.sys('cat {0}'.format(path), code=0)
         except CommandExitCodeException:
             return None
@@ -362,18 +363,23 @@ class EucaHost(Machine):
                 return match.group(1)
         if machine.is_dir('/opt/eucalyptus'):
             return '/opt/eucalyptus'
-        out = machine.sys('ls /usr/sbin/ | grep eucalyptus')
-        if out:
+        try:
+            machine.sys('ls /usr/sbin/ | grep eucalyptus', code=0)
             return '/'
+        except CommandExitCodeException:
+            pass
         if hasattr(machine, 'eucalyptus_conf') and machine.eucalyptus_conf.EUCALYPTUS:
             return machine.eucalyptus_conf.EUCALYPTUS
-        return "/"
+        return '/'
 
-    def get_eucalyptus_home(self):
+    @property
+    def eucalyptus_home(self):
         """
         A poor attempt to find the Eucalyptus installation path, ie: '/', or '/opt/eucalyptus'
         """
-        return self._get_eucalyptus_home(self)
+        if self._eucalyptus_home is None:
+            self._eucalyptus_home = self._get_eucalyptus_home(self)
+        return self._eucalyptus_home
 
     def get_eucalyptus_conf(self, eof=False, basepaths=None, verbose=False):
         """
