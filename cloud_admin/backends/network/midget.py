@@ -1051,6 +1051,12 @@ class Midget(object):
             ip-address-group-src $ipAddrGroupSrc fragment-policy $fragmentPolicy pos $position
             type $type action $natFlowAction target $natTargets
         '''
+        def invert(inv_meth):
+            if inv_meth():
+                return "!"
+            else:
+                return  ""
+
         if not isinstance(rules, list):
             rules = [rules]
         buf = ""
@@ -1098,12 +1104,15 @@ class Midget(object):
             pt.add_row(['{0} {1}'.format(self._bold("RULE#:" +
                                                     str(rules.index(rule) + 1)).ljust(title_width),
                                          rule.get_id()),
-                        "{0}/{1}".format(rule.get_nw_src_address(), rule.get_nw_src_length()),
-                        "{0}/{1}".format(rule.get_nw_dst_address(), rule.get_nw_dst_length()),
-                        self._get_protocol_name_by_number(rule.get_nw_proto()),
-                        ports,
-                        rule.get_nw_tos(),
-                        ip_addr_group,
+                        "{0}{1}/2".format(invert(rule.is_inv_nw_src), rule.get_nw_src_address(),
+                                          rule.get_nw_src_length()),
+                        "{0}{1}/2".format(invert(rule.is_inv_nw_dst), rule.get_nw_dst_address(),
+                                          rule.get_nw_dst_length()),
+                        "{0}{1}".format(invert(rule.is_inv_nw_proto),
+                                        self._get_protocol_name_by_number(rule.get_nw_proto())),
+                        "{0}{1}".format(invert(rule.is_inv_tp_dst), ports),
+                        "{0}{1}".format(invert(rule.is_inv_nw_tos), rule.get_nw_tos()),
+                        "{0}{1}".format(invert(rule.is_inv_ip_addr_group_src), ip_addr_group),
                         rule.get_fragment_policy(),
                         rule.get_position(),
                         rule_type,
@@ -1122,6 +1131,7 @@ class Midget(object):
             return buf
 
     def show_router_for_instance(self, instance, printme=True):
+        instance = self._get_instance(instance)
         ret_buf = self._highlight_buf_for_instance(
             buf=self.show_router_summary(router=self.get_router_for_instance(instance=instance),
                                          printme=False),
@@ -1345,6 +1355,7 @@ class Midget(object):
     def get_instance_learned_port_by_ping(self, instance):
         # Port may not be currently active/learned on the bridge,
         # try to ping the private interface...
+        instance = self._get_instance(instance)
         port = self.get_bridge_port_for_instance_learned(instance)
         if not port:
             try:
