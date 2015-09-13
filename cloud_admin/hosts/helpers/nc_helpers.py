@@ -51,7 +51,7 @@ class NodeControllerHelpers(EucaMachineHelpers):
             self.log.debug('Cant fetch capacity status from node with loglevel: DEBUG < "{0}"'
                            .format(self.eucahost.eucalyptus_conf.LOG_LEVEL))
             return ret
-        euca_path = self.eucahost.get_eucalyptus_home() or ""
+        euca_path = self.eucahost.eucalyptus_home or ""
         nclog = os.path.join(euca_path, 'var/log/eucalyptus/nc.log')
         try:
             out = self.sys('tac {0} | grep -m1 "returning status="'.format(nclog), code=0,
