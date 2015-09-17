@@ -327,7 +327,7 @@ class Midget(object):
         else:
             return pt
 
-    def show_routers(self, routers=None, loglevel='info'):
+    def show_routers(self, routers=None, loglevel='info', printme=True):
         '''
         Show a list of routers, or by default all routers in the current session context
         :param loglevel: local logger method to use to print the router info, or None
@@ -335,10 +335,15 @@ class Midget(object):
         :return if loglevel is None, the buffer contain router info is returned. Else
                 the table is printed with the local logger's method 'loglevel'.
         '''
-        if loglevel:
-            assert isinstance(loglevel, basestring), "loglevel must be type string or None"
-            loglevel = str(loglevel).lower()
-        printmethod = getattr(self.logger, loglevel, None)
+        printmethod = None
+        if printme:
+            if loglevel:
+                assert isinstance(loglevel, basestring), "loglevel must be type string or None"
+                loglevel = str(loglevel).lower()
+                printmethod = getattr(self.logger, loglevel, None)
+            if not printmethod:
+                def printmethod(x):
+                    print x
         buf = ""
         if routers is None:
             routers = self.get_all_routers()
@@ -351,7 +356,7 @@ class Midget(object):
             routers = [routers]
         for router in routers:
             if router:
-                buf = "\n{0}\n".format(self.show_router_summary(router,
+                buf += "\n{0}\n".format(self.show_router_summary(router,
                                                                 showchains=False,
                                                                 printme=False))
         if printmethod:
@@ -499,51 +504,54 @@ class Midget(object):
         For more verbose info about a specific port use show_port_summary()
         """
         buf = ""
-        if not isinstance(ports, list):
-            ports = [ports]
         pt = None
-        for port in ports:
+        if ports:
+            if not isinstance(ports, list):
+                ports = [ports]
+            for port in ports:
+                if pt is None:
+                    if buf:
+                        buf += "(PORTS TABLE CONTINUED...)\n"
+                    pt = PrettyTable(['PORT ID', 'BGPS', 'IPADDR', 'NETWORK', 'MAC',
+                                          'TYPE', 'UP', 'PEER ID'])
+                    pt.padding_width = 0
+                bgps = 0
+                try:
+                    if port.dto.get('bgps'):
+                        bgps = port.get_bgps()
+                        if bgps:
+                            bgps = len(bgps)
+                        else:
+                            bgps = 0
+                except Exception, E:
+                    bgps = 'ERROR'
+                    self.info('Error fetching bgps from port:{0}, err"{1}'
+                              .format(port.get_id(), E))
+                pt.add_row([port.get_id(),
+                            bgps,
+                            port.get_port_address(),
+                            "{0}/{1}".format(port.get_network_address(),
+                                             port.get_network_length()),
+                            port.get_port_mac(),
+                            port.get_type(),
+                            port.get_admin_state_up(),
+                            port.get_peer_id()])
 
-            pt = PrettyTable(['PORT ID', 'BGPS', 'IPADDR', 'NETWORK', 'MAC',
-                              'TYPE', 'UP', 'PEER ID'])
-            pt.padding_width = 0
-            bgps = 0
-            try:
-                if port.dto.get('bgps'):
-                    bgps = port.get_bgps()
-                    if bgps:
-                        bgps = len(bgps)
-                    else:
-                        bgps = 0
-            except Exception, E:
-                bgps = 'ERROR'
-                self.info('Error fetching bgps from port:{0}, err"{1}'.format(port.get_id(), E))
-
-            pt.add_row([port.get_id(),
-                        bgps,
-                        port.get_port_address(),
-                        "{0}/{1}".format(port.get_network_address(), port.get_network_length()),
-                        port.get_port_mac(),
-                        port.get_type(),
-                        port.get_admin_state_up(),
-                        port.get_peer_id()])
-
-            if bgps and bgps != "ERROR":
-                lines = []
-                for line in str(pt).splitlines():
-                    line = line.strip()
-                    if line:
-                        lines.append(line)
-                footer = lines[-1]
-                buf += "\n".join(lines) + '\n'
-                pt = None
-                buf += self._link_table_buf(self.show_bgps(port.get_bgps(), printme=False))
-                buf += footer + '\n'
-
-        if pt:
-            buf += str(pt)
+                if bgps and bgps != "ERROR":
+                    lines = []
+                    for line in str(pt).splitlines():
+                        line = line.strip()
+                        if line:
+                            lines.append(line)
+                    # footer = lines[-1]
+                    buf += "\n".join(lines) + '\n'
+                    pt = None
+                    buf += self._link_table_buf(self.show_bgps(port.get_bgps(), printme=False))
+                    # buf += footer + '\n'
+            if pt:
+                buf += str(pt) + '\n'
         if printme:
-            self.info('\n{0}\n'.format(pt))
+            self.info('\n{0}\n'.format(buf))
         else:
             return buf
 

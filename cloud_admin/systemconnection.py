@@ -20,7 +20,7 @@ class SystemConnection(ServiceConnection):
                  password=None,
                  keypath=None,
                  proxy_hostname=None,
-                 proxy_username='root',
+                 proxy_username=None,
                  proxy_password=None,
                  proxy_keypath=None,
                  config_yml=None,
@@ -33,15 +33,15 @@ class SystemConnection(ServiceConnection):
                  euca_user='admin',
                  euca_account='eucalyptus',
                  ):
-        self.clc_connect_kwargs = {
+        self.machine_connect_kwargs = {
             'hostname': hostname,
             'username': username,
             'password': password,
             'keypath': keypath,
             'proxy_hostname': proxy_hostname,
-            'proxy_username': proxy_username,
-            'proxy_password': proxy_password,
-            'proxy_keypath': proxy_keypath
+            'proxy_username': proxy_username or username,
+            'proxy_password': proxy_password or password,
+            'proxy_keypath': proxy_keypath or keypath
         }
         self._clc_machine = None
         self.hostname = hostname
@@ -58,7 +58,7 @@ class SystemConnection(ServiceConnection):
                                aws_account_name=euca_account,
                                aws_user_name=euca_user,
                                logger=self.log,
-                               **self.clc_connect_kwargs)
+                               **self.machine_connect_kwargs)
         super(SystemConnection, self).__init__(hostname=hostname,
                                                aws_secret_key=self.creds.aws_secret_key,
                                                aws_access_key=self.creds.aws_access_key,
@@ -89,12 +89,12 @@ class SystemConnection(ServiceConnection):
     @property
     def clc_machine(self):
         if not self._clc_machine:
-            if self.clc_connect_kwargs['hostname']:
-                if self.eucahosts[self.clc_connect_kwargs['hostname']]:
-                    self._clc_machine = self.eucahosts[self.clc_connect_kwargs['hostname']]
+            if self.machine_connect_kwargs['hostname']:
+                if self.eucahosts[self.machine_connect_kwargs['hostname']]:
+                    self._clc_machine = self.eucahosts[self.machine_connect_kwargs['hostname']]
                 else:
-                    self._clc_machine = Machine(**self.clc_connect_kwargs)
-                    self.eucahosts[self.clc_connect_kwargs['hostname']] = self._clc_machine
+                    self._clc_machine = Machine(**self.machine_connect_kwargs)
+                    self.eucahosts[self.machine_connect_kwargs['hostname']] = self._clc_machine
         return self._clc_machine
 
     @property
@@ -105,7 +105,7 @@ class SystemConnection(ServiceConnection):
 
     def _update_host_list(self):
         machines = self.get_all_machine_mappings()
-        connect_kwargs = copy.copy(self.clc_connect_kwargs)
+        connect_kwargs = copy.copy(self.machine_connect_kwargs)
         if 'hostname' in connect_kwargs:
             connect_kwargs.pop('hostname')
         hostlock = threading.Lock()

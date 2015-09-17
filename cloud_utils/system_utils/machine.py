@@ -334,10 +334,12 @@ class Machine(object):
     @property
     def ssh(self):
         if not self._ssh:
-            hostname = self.ssh_connect_kwargs.get('host', None)
-            if not hostname:
-                raise ValueError('Host not provided in ssh_connect_kwargs for machine')
             if self._do_ssh_connect:
+                hostname = self.ssh_connect_kwargs.get('host', None)
+                if not hostname:
+                    raise ValueError('Host not provided in ssh_connect_kwargs for machine')
+                # Check for a proxy
+                hostname = self.ssh_connect_kwargs.get('proxy', hostname)
                 port_status = False
                 for x in xrange(0, 3):
                     try:
@@ -347,9 +349,14 @@ class Machine(object):
                     except socketerror:
                         pass
                 if port_status:
-                    self._ssh = SshConnection(**self.ssh_connect_kwargs)
+                    try:
+                        self._ssh = SshConnection(**self.ssh_connect_kwargs)
+                    except:
+                        self.log.warning('Failed to establish ssh connection with args:"{0}"'
+                                         .format(self.ssh_connect_kwargs))
+                        raise
                 else:
-                    raise RuntimeError('Could reach machine:"{0}"  at tcp/22'.format(hostname))
+                    raise RuntimeError('Could not reach machine:"{0}"  at tcp/22'.format(hostname))
         return self._ssh
 
     @ssh.setter
