@@ -339,7 +339,7 @@ class Machine(object):
                 if not hostname:
                     raise ValueError('Host not provided in ssh_connect_kwargs for machine')
                 # Check for a proxy
-                hostname = self.ssh_connect_kwargs.get('proxy', hostname)
+                hostname = self.ssh_connect_kwargs.get('proxy', None) or hostname
                 port_status = False
                 for x in xrange(0, 3):
                     try:
