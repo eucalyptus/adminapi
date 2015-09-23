@@ -1112,9 +1112,9 @@ class Midget(object):
             pt.add_row(['{0} {1}'.format(self._bold("RULE#:" +
                                                     str(rules.index(rule) + 1)).ljust(title_width),
                                          rule.get_id()),
-                        "{0}{1}/2".format(invert(rule.is_inv_nw_src), rule.get_nw_src_address(),
+                        "{0}{1}/{2}".format(invert(rule.is_inv_nw_src), rule.get_nw_src_address(),
                                           rule.get_nw_src_length()),
-                        "{0}{1}/2".format(invert(rule.is_inv_nw_dst), rule.get_nw_dst_address(),
+                        "{0}{1}/{2}".format(invert(rule.is_inv_nw_dst), rule.get_nw_dst_address(),
                                           rule.get_nw_dst_length()),
                         "{0}{1}".format(invert(rule.is_inv_nw_proto),
                                         self._get_protocol_name_by_number(rule.get_nw_proto())),
@@ -1192,12 +1192,6 @@ class Midget(object):
         else:
             return pt
 
-    def show_security_groups_for_instance(self, instance, printme=True):
-        buf = ""
-        instance = self._get_instance(instance)
-        return self.show_security_groups_for_instance(instance=instance,
-                                                      printmethod=self.debug,
-                                                      printme=printme)
 
     def show_ip_addr_group_addrs(self, ipgroup, printme=True):
         if not isinstance(ipgroup, IpAddrGroup):
@@ -1488,6 +1482,7 @@ class Midget(object):
             return maintable
 
     def show_security_groups_for_instance(self, instance, printmethod=None, printme=True):
+        instance = self._get_instance(instance)
         buf = ""
         title = markup("EUCA SECURITY GROUPS FOR INSTANCE:{0}".format(instance.id))
         pt = PrettyTable([title])
@@ -1500,3 +1495,53 @@ class Midget(object):
             printmethod('\n{0}\n'.format(pt))
         else:
             return pt
+
+    def show_instance_meta_data_artifacts(self, instance, printmethod=None, printme=True):
+        instance = self._get_instance(instance)
+        buf = ""
+        title = markup("INSTANCE META DATA ARTIFACTS:{0}".format(instance.id))
+        pt = PrettyTable([title])
+        pt.align['title'] = 'l'
+        for group in instance.groups:
+            buf += str(self.show_security_group(group=group, printme=False))
+        pt.add_row([buf])
+        if printme:
+            printmethod = printmethod or self.debug
+            printmethod('\n{0}\n'.format(pt))
+        else:
+            return pt
+
+
+    def get_euca_subnet_metadata_addr(self, subnet):
+        if isinstance(subnet, basestring):
+            subnet = self.eucaconnection.ec2_connection.get_all_subnets([subnet, 'verbose'])[0]
+        cidr = subnet.cidr_block
+        network, netmask = cidr.split('/')
+        octets = network.split('.')
+        octets[-1] = int(octets[-1]) + 2
+        metaip = ".".join(str(x) for x in octets)
+        return metaip
+
+    def get_instance_bridge_port_metadata_nat_rule(self, instance):
+        instance = self._get_instance(instance)
+        metaip = self.get_euca_subnet_metadata_addr(instance.subnet_id)
+        port = self.get_bridge_port_for_instance_by_port_name(instance)
+        chain = self.mapi.get_chain(port.get_outbound_filter_id())
+        rules = chain.get_rules()
+        for rule in rules:
+            if rule.get_nw_src_address() == metaip:
+                for nat in rule.dto.get('natTargets', []):
+                    if nat.get('addressTo', None) == '169.254.169.254':
+                        return rule
+        return None
+
+    def show_instance_bridge_port_metadata_nat_rule(self, instance):
+        rule = self.get_instance_bridge_port_metadata_nat_rule(instance)
+        if rule:
+            self.show_rules(rule)
+        else:
+            self.logger.debug('No Rules Found')
+
+
+
+
