@@ -7,6 +7,7 @@ import threading
 from cloud_admin.access.autocreds import AutoCreds
 from cloud_admin.services.serviceconnection import ServiceConnection
 from cloud_admin.hosts.eucahost import EucaHost
+from cloud_admin.services.node_service import EucaNodeService
 from cloud_utils.system_utils.machine import Machine
 from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_utils.log_utils import markup
@@ -146,20 +147,23 @@ class SystemConnection(ServiceConnection):
         retlist = []
         for nc in ncs:
             if instanceid:
-                for instance in nc.instances:
-                    if instance == instanceid:
+                for service in nc.services:
+                    if isinstance(service, EucaNodeService):
+                        instances = getattr(service, 'instances', [])
+                for instance in instances:
+                    if instance.id == instanceid:
                         return [nc]
-            if nc.partition == partition:
+            if partition and partition in nc.partitions:
                 retlist.append(nc)
         return retlist
 
-    def get_hosts_cluster_controllers(self, partition=None):
+    def get_hosts_for_cluster_controllers(self, partition=None):
         ccs = self.get_hosts_by_service_type(servicetype='cluster')
         if not partition:
             return ccs
         retlist = []
         for cc in ccs:
-            if cc.partition == partition:
+            if partition in cc.partitions:
                 retlist.append(cc)
         return retlist
 
@@ -169,7 +173,7 @@ class SystemConnection(ServiceConnection):
             return scs
         retlist = []
         for sc in scs:
-            if sc.partition == partition:
+            if partition in sc.partitions:
                 retlist.append(sc)
         return retlist
 

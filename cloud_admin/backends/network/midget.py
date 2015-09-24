@@ -1545,6 +1545,23 @@ class Midget(object):
         else:
             self.logger.debug('No Rules Found')
 
+    def get_clc_veth_for_subnet(self, subnet):
+        if not subnet:
+            raise ValueError('get_clc_veth_for_subnet(). Subnet not provided')
+        if not isinstance(subnet, basestring):
+            subnet = subnet.id
+        subnet = str(subnet).replace('subnet-', 'vn0_')
+        self.eucaconnection.clc_machine.sys('ifconfig | grep {0}'.format(subnet), code=0)
+
+    def get_clc_veth_for_vpc(self, vpc):
+        if not vpc:
+            raise ValueError('get_clc_veth_for_vpc(). VPC not provided')
+        if not isinstance(vpc, basestring):
+            vpc = vpc.id
+        vpc = str(vpc).replace('vpc-', 'vn2_')
+        self.eucaconnection.clc_machine.sys('ifconfig | grep {0}'.format(vpc), code=0)
+
+
 
 
 

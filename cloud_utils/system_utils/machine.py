@@ -79,6 +79,7 @@ class Machine(object):
         self._config = None
         self._free_stats = {}
         self._cpu_stats = {}
+        self._net_iface_stats = {}
         self._sys_stats_interval = 5
         self._hostname = hostname
         self.arch = arch
@@ -126,7 +127,6 @@ class Machine(object):
     @hostname.setter
     def hostname(self, hostname):
         self._hostname = hostname
-
 
     @property
     def _identifier(self):
@@ -595,6 +595,122 @@ class Machine(object):
             for item in sorted(out):
                 self.debug(str(item) + " = " + str(out[item]))
         return out
+
+    def get_network_interfaces(self, search_name=None):
+        interfaces = {}
+        time_stamp = int(time.time())
+        out = self.sys('cat /proc/net/dev', code=0)
+        assert isinstance(out, list)
+        header_line = out[0]
+        headers = []
+        for h in str(header_line).upper().split('|'):
+            headers.append(h.strip())
+        headers[0] = 'INTERFACE'
+        sections = []
+        section_line = out[1]
+        header_index = 0
+        header = headers[header_index]
+        section_line = str(section_line).replace('|', ' | ').upper()
+        for section in str(section_line).split():
+            section = section.strip()
+            if section == '|':
+                header_index += 1
+                header = headers[header_index]
+            else:
+                sections.append("{0}_{1}".format(headers[header_index], section))
+        for line in out[2:]:
+            columns = line.split()
+            iface_name = str(columns[0]).strip(':')
+            if search_name and not re.search(search_name, iface_name):
+                continue
+            else:
+                interface = {}
+                for x in xrange(1, len(columns)):
+                    interface[sections[x]] = columns[x].strip()
+                interfaces[iface_name] = interface
+        return interfaces
+
+    def show_network_interface_table(self, search_name=None, interfaces=None, empty_header_min=4,
+                                     header_min=6, printmethod=None, printme=True):
+        interfaces = interfaces or self.get_network_interfaces(search_name=search_name)
+        headers = ['IFACE']
+        for value in interfaces.values()[0].keys():
+            header = (re.sub('TRANSMIT_', 'TX', re.sub('RECEIVE_', 'RX', value)).strip())
+            headers.append(header)
+        pt = PrettyTable(headers)
+        pt.hrules = 1
+        pt.header = False
+        pt.align = 'l'
+        pt.padding_width = 0
+        for key, value in interfaces.iteritems():
+            pt.add_row([markup(key, [1, 94])] + value.values())
+        opt = pt._get_options({})
+        pt._compute_widths(pt._format_rows(pt._rows, opt), opt)
+        fake_header = []
+        for x in xrange(0, len(pt.field_names)):
+            if pt._widths[x] > 1:
+                if pt._widths[x] > header_min:
+                    limit = pt._widths[x]
+                else:
+                    limit = header_min
+            else:
+                limit = empty_header_min
+            fake_header.append(markup(pt.field_names[x][0:limit], [4]))
+        pt._rows = [fake_header] + pt._rows
+        if not printme:
+            return pt
+        printmethod = printmethod or self.log.info
+        printmethod("\n{0}\n".format(pt))
+
+    def get_network_interfaces_delta(self, search_name=None):
+        last = self._net_iface_stats or {}
+        elapsed = None
+        old_interfaces = {}
+        new_interfaces = {}
+        delta = {}
+        if last:
+            lasttime = last.get('timestamp')
+            interfaces = last.get('interfaces')
+            if search_name:
+                for key, value in interfaces.iteritems():
+                    if re.search(search_name, key):
+                        old_interfaces[key] = value
+            else:
+                old_interfaces = interfaces
+            elapsed = float("{0:.2f}".format(time.time() - lasttime))
+        # Fe    tch new dict w/o filters to cache all entries, filter afterward
+        new_fetch = self.get_network_interfaces()
+        self._net_iface_stats = {'timestamp': time.time(), 'interfaces': new_fetch}
+        if search_name:
+            for key, value in new_fetch.iteritems():
+                if re.search(search_name, key):
+                    new_interfaces[key] = value
+            if not new_interfaces:
+                self.log.info('No interfaces found matching string: "{0}"'.format(search_name))
+        else:
+            new_interfaces = new_fetch
+        for iface_name, new_iface_dict in new_interfaces.iteritems():
+            iface_delta_dict = {}
+            if iface_name in old_interfaces:
+                old_dict = old_interfaces.get(iface_name)
+                for key, value in new_iface_dict.iteritems():
+                    iface_delta_dict[key] = int(value) - int(old_dict.get(key, 0))
+            else:
+                iface_delta_dict = new_iface_dict
+            delta[iface_name] = iface_delta_dict
+        return {'elapsed': elapsed, 'interfaces': delta}
+
+    def show_network_interfaces_delta(self, search_name=None, printmethod=None, printme=True):
+        delta = self.get_network_interfaces_delta(search_name=search_name)
+        pt = self.show_network_interface_table(interfaces=delta.get('interfaces', {}),
+                                               printme=False)
+        buf = markup("Time Elapsed Since Last Update: {0}\n".format(delta.get('elapsed')),
+                     [1, 4, 91])
+        buf += pt.get_string() + "\n"
+        if not printme:
+            return pt
+        printmethod = printmethod or self.log.info
+        printmethod(buf)
 
     ###############################################################################################
     #                           OS/System Utilties                                                #
