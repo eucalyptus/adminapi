@@ -596,10 +596,10 @@ class Machine(object):
                 self.debug(str(item) + " = " + str(out[item]))
         return out
 
-    def get_network_interfaces(self, search_name=None):
+    def get_network_interfaces(self, search_name=None, verbose=False):
         interfaces = {}
         time_stamp = int(time.time())
-        out = self.sys('cat /proc/net/dev', code=0)
+        out = self.sys('cat /proc/net/dev', code=0, verbose=verbose)
         assert isinstance(out, list)
         header_line = out[0]
         headers = []
@@ -630,7 +630,7 @@ class Machine(object):
                 interfaces[iface_name] = interface
         return interfaces
 
-    def show_network_interface_table(self, search_name=None, interfaces=None, empty_header_min=4,
+    def show_network_interfaces_table(self, search_name=None, interfaces=None, empty_header_min=4,
                                      header_min=6, printmethod=None, printme=True):
         interfaces = interfaces or self.get_network_interfaces(search_name=search_name)
         headers = ['IFACE']
@@ -702,7 +702,7 @@ class Machine(object):
 
     def show_network_interfaces_delta(self, search_name=None, printmethod=None, printme=True):
         delta = self.get_network_interfaces_delta(search_name=search_name)
-        pt = self.show_network_interface_table(interfaces=delta.get('interfaces', {}),
+        pt = self.show_network_interfaces_table(interfaces=delta.get('interfaces', {}),
                                                printme=False)
         buf = markup("Time Elapsed Since Last Update: {0}\n".format(delta.get('elapsed')),
                      [1, 4, 91])
