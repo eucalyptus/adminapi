@@ -200,7 +200,7 @@ class EucaHost(Machine):
         return ret
 
     def show_euca_process_summary(self, printmethod=None, print_table=True):
-        printmethod = printmethod or self.logger.info
+        printmethod = printmethod or self.log.info
         ps_sum = self.get_euca_process_summary()
         serv_hdr = markup('HOST SERVICE', [1, 4])
         pt = PrettyTable([serv_hdr,
@@ -253,7 +253,7 @@ class EucaHost(Machine):
             except (CommandExitCodeException, IndexError):
                 pass
         if pid is None:
-            self.logger.debug("Pid not found at paths: ".join(paths))
+            self.log.debug("Pid not found at paths: ".join(paths))
         return pid
 
     def get_eucalyptus_cloud_pid(self):
@@ -348,7 +348,7 @@ class EucaHost(Machine):
                         return " ".join(split[1:])
                     return split[1]
         except CommandExitCodeException as CE:
-            self.logger.debug('Failed to fetch euca2ools version, err:"{0}"'.format(str(CE)))
+            self.log.debug('Failed to fetch euca2ools version, err:"{0}"'.format(str(CE)))
         return None
 
     @staticmethod
@@ -404,7 +404,7 @@ class EucaHost(Machine):
                 out = self.sys('cat {0}'.format(eucalyptus_conf_path), code=0,
                                verbose=verbose)
                 if verbose:
-                    self.logger.debug('Found eucalyptus.conf at path: "{0}"'
+                    self.log.debug('Found eucalyptus.conf at path: "{0}"'
                                    .format(eucalyptus_conf_path))
                 self.eucalyptus_conf_path = eucalyptus_conf_path
                 break
@@ -419,14 +419,14 @@ class EucaHost(Machine):
             if eof:
                 raise RuntimeError(err)
             else:
-                self.logger.debug(err)
+                self.log.debug(err)
         else:
             try:
                 eucalyptus_conf = EucalyptusConf(lines=out)
                 self.eucalyptus_conf = eucalyptus_conf
             except Exception, e:
                 out = 'Error while trying to create EucalyptusConf():' + str(e)
-                self.logger.warn(out)
+                self.log.warn(out)
                 if eof:
                     raise
         return eucalyptus_conf

@@ -340,6 +340,10 @@ class Eucarc(object):
     def log(self):
         return self._log
 
+    @log.setter
+    def log(self, logger):
+        self._log = logger
+
     @property
     def keys_dir(self):
         return self._keysdir

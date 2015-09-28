@@ -89,7 +89,7 @@ class Machine(object):
         self.verbose = verbose
         if logger is None:
             logger = Eulogger(identifier=self._identifier)
-        self.logger = logger
+        self.log = logger
         self.ssh_connect_kwargs = {'host': self.hostname,
                                    'username': self.username,
                                    'password': self.password,
@@ -100,7 +100,7 @@ class Machine(object):
                                    'proxy_keypath': proxy_keypath,
                                    'timeout': timeout,
                                    'retry': ssh_retry,
-                                   'logger': self.logger,
+                                   'logger': self.log,
                                    'verbose': self.verbose
                                    }
         self.log_threads = {}
@@ -143,10 +143,10 @@ class Machine(object):
         msg - mandatory -string, message to be printed
         """
         if self.verbose is True:
-            self.logger.debug(msg)
+            self.log.debug(msg)
 
     def poll_log(self, log_file="/var/log/messages"):
-        self.logger.debug("Starting to poll " + log_file)
+        self.log.debug("Starting to poll " + log_file)
         self.log_channel = self.ssh.connection.invoke_shell()
         self.log_channel.send("tail -f " + log_file + " \n")
         # Begin polling channel for any new data
@@ -225,7 +225,7 @@ class Machine(object):
         buf += self.sys('dmesg | tail -' + str(taillength), listformat=False)
         buf += self.sys('cat /var/log/messages | tail -' + str(taillength), listformat=False)
         if loglevel:
-            logger = getattr(self.logger, loglevel, None)
+            logger = getattr(self.log, loglevel, None)
             if logger:
                 logger(buf)
         return buf
@@ -277,7 +277,7 @@ class Machine(object):
         try:
             out = self.sys('cat /etc/issue', listformat=False, code=0, verbose=verbose)
         except CommandExitCodeException, CE:
-            self.logger.debug('Failed to fetch /etc/issue from machine:"{0}", err:"{1}"'
+            self.log.debug('Failed to fetch /etc/issue from machine:"{0}", err:"{1}"'
                            .format(self.hostname, str(CE)))
             out = None
         if out:
@@ -285,7 +285,7 @@ class Machine(object):
                 self.distro = str(re.match("^\w+", out).group()).strip().lower()
                 self.distro_ver = str(re.search("\s(\d+[\d, .]*)\s", out).group()).strip().lower()
             except Exception, DE:
-                self.logger.debug('Could not parse distro info from machine, err:' + str(DE))
+                self.log.debug('Could not parse distro info from machine, err:' + str(DE))
         self.distro = self.distro or "UNKNOWN"
         self.distro_ver = self.distro_ver or "UNKNOWN"
         return (self.distro, self.distro_ver)
@@ -343,7 +343,7 @@ class Machine(object):
                 port_status = False
                 for x in xrange(0, 3):
                     try:
-                        test_port_status(hostname, port=22, tcp=True, debug=self.logger.debug)
+                        test_port_status(hostname, port=22, tcp=True, debug=self.log.debug)
                         port_status = True
                         break
                     except socketerror:
@@ -352,7 +352,7 @@ class Machine(object):
                     try:
                         self._ssh = SshConnection(**self.ssh_connect_kwargs)
                     except:
-                        self.logger.warning('Failed to establish ssh connection with args:"{0}"'
+                        self.log.warning('Failed to establish ssh connection with args:"{0}"'
                                          .format(self.ssh_connect_kwargs))
                         raise
                 else:
@@ -476,7 +476,7 @@ class Machine(object):
         given string buf
         """
         if verbose:
-            self.logger.debug(str(buf))
+            self.log.debug(str(buf))
         return SshCbReturn(stop=self._str_found(buf, regex=regex, search=search))
 
     def _str_found(self, buf, regex, search=True):
@@ -512,7 +512,7 @@ class Machine(object):
         :param timeout: the overall timeout for the wget command being executed on this machine
         :raise RuntimeError upon wget failure/error.
         """
-        self.logger.debug('wget_remote_image, url:' + str(url) + ", path:" + str(path))
+        self.log.debug('wget_remote_image, url:' + str(url) + ", path:" + str(path))
         cmd = 'wget '
         if path:
             cmd = cmd + " -P " + str(path)
@@ -525,11 +525,11 @@ class Machine(object):
         if retryconn:
             cmd += ' --retry-connrefused '
         cmd = cmd + ' ' + str(url)
-        self.logger.debug('wget_remote_image cmd: ' + str(cmd))
+        self.log.debug('wget_remote_image cmd: ' + str(cmd))
         ret = self.cmd(cmd, timeout=timeout, cb=self.wget_status_cb)
         if ret['status'] != 0:
             raise RuntimeError('wget_remote_image failed with status:' + str(ret['status']))
-        self.logger.debug('wget_remote_image succeeded')
+        self.log.debug('wget_remote_image succeeded')
 
     def wget_status_cb(self, buf):
         """
@@ -659,7 +659,7 @@ class Machine(object):
         pt._rows = [fake_header] + pt._rows
         if not printme:
             return pt
-        printmethod = printmethod or self.logger.info
+        printmethod = printmethod or self.log.info
         printmethod("\n{0}\n".format(pt))
 
     def get_network_interfaces_delta(self, search_name=None):
@@ -678,7 +678,7 @@ class Machine(object):
             else:
                 old_interfaces = interfaces
             elapsed = float("{0:.2f}".format(time.time() - lasttime))
-        # Fe    tch new dict w/o filters to cache all entries, filter afterward
+        # Fetch new dict w/o filters to cache all entries, filter afterward
         new_fetch = self.get_network_interfaces()
         self._net_iface_stats = {'timestamp': time.time(), 'interfaces': new_fetch}
         if search_name:
@@ -686,7 +686,7 @@ class Machine(object):
                 if re.search(search_name, key):
                     new_interfaces[key] = value
             if not new_interfaces:
-                self.logger.info('No interfaces found matching string: "{0}"'.format(search_name))
+                self.log.info('No interfaces found matching string: "{0}"'.format(search_name))
         else:
             new_interfaces = new_fetch
         for iface_name, new_iface_dict in new_interfaces.iteritems():
@@ -709,7 +709,7 @@ class Machine(object):
         buf += pt.get_string() + "\n"
         if not printme:
             return pt
-        printmethod = printmethod or self.logger.info
+        printmethod = printmethod or self.log.info
         printmethod(buf)
 
     ###############################################################################################
@@ -746,7 +746,7 @@ class Machine(object):
                                 break
                 free_stats['last_updated'] = time.time()
             except Exception as CE:
-                self.logger.warn('{0}\n{1}\nFailed to update mem stats:"{2}"'
+                self.log.warn('{0}\n{1}\nFailed to update mem stats:"{2}"'
                               .format("\n".join(out or []), get_traceback(), CE))
             self._free_stats['stats'] = free_stats
 
@@ -801,7 +801,7 @@ class Machine(object):
             self._arch = arch
             return arch
         except Exception, UE:
-            self.logger.debug('Failed to get arch info from:"{0}", err:"{1}"'
+            self.log.debug('Failed to get arch info from:"{0}", err:"{1}"'
                            .format(self.hostname, str(UE)))
         return None
 
@@ -840,7 +840,7 @@ class Machine(object):
         self.sys("mount " + device + " " + path)
 
     def show_sys_info(self, mem=True, cpu=True, disk=True, print_method=None, print_table=True):
-        print_method = print_method or self.logger.info
+        print_method = print_method or self.log.info
         sys_pt = PrettyTable(['name', 'value', 'percent'])
         sys_pt.header = False
         sys_pt.border = 0
@@ -916,7 +916,7 @@ class Machine(object):
 
                 self._cpu_stats['last_updated'] = time.time()
             except Exception as CE:
-                self.logger.warn('{0}\n{1}\nFailed to update cpu stats:"{2}"'
+                self.log.warn('{0}\n{1}\nFailed to update cpu stats:"{2}"'
                               .format("\n".join(out or []), get_traceback(), CE))
             self._cpu_stats['stats'] = cpu_stats
         return self._cpu_stats.get('stats', {})
@@ -933,7 +933,7 @@ class Machine(object):
         except CommandExitCodeException:
             return False
         except Exception, e:
-            self.logger.debug('Could not get "{0}" service state from machine: {1}, err:{2}'
+            self.log.debug('Could not get "{0}" service state from machine: {1}, err:{2}'
                            .format(service, self.hostname, str(e)))
 
     def get_elapsed_seconds_since_pid_started(self, pid):
@@ -951,7 +951,7 @@ class Machine(object):
             if not pid:
                 raise Exception('Empty pid passed to get_elapsed_seconds_since_pid_started')
             cmd = "ps -eo pid,etime | grep " + str(pid) + " | awk '{print $2}'"
-            self.logger.debug('starting get pid uptime"' + str(cmd) + '"...')
+            self.log.debug('starting get pid uptime"' + str(cmd) + '"...')
             # expected format: days-HH:MM:SS
             out = self.sys(cmd, code=0)[0]
             out = out.strip()
@@ -974,7 +974,7 @@ class Machine(object):
             elapsed = seconds + (minutes * seconds_min) + (hours * seconds_hour) + (
                 days * seconds_day)
         except Exception, ES:
-            self.logger.debug('{0}\n"get_elapsed_seconds_since_pid_started" error: "{1}"'
+            self.log.debug('{0}\n"get_elapsed_seconds_since_pid_started" error: "{1}"'
                            .format(get_traceback(), str(ES)))
         return int(elapsed)
 
@@ -986,7 +986,7 @@ class Machine(object):
         try:
             out = self.sys('ps -p {0} --ppid {0} -o {1}'.format(pid, ",".join(ps_cols)), code=0)
         except CommandExitCodeException as CE:
-            self.logger.debug('Error fetching info for pid:{0}, err:"{1}"'.format(pid, str(CE)))
+            self.log.debug('Error fetching info for pid:{0}, err:"{1}"'.format(pid, str(CE)))
         else:
             if len(out) >= 2:
                 header = out[0].split()
@@ -1031,11 +1031,11 @@ class Machine(object):
                                      str(uid_min) + " && $3 <= " + str(uid_max) +
                                      " ) print $0}' ")[0]).split(":")[0]
             except IndexError, ie:
-                self.logger.debug("No access found, passing exception:" + str(ie))
+                self.log.debug("No access found, passing exception:" + str(ie))
                 pass
             return users
         except Exception, e:
-            self.logger.debug("Failed to get local access. Err:" + str(e))
+            self.log.debug("Failed to get local access. Err:" + str(e))
 
     def get_user_password(self, username):
         '''
@@ -1047,7 +1047,7 @@ class Machine(object):
         password = None
         out = self.sys("cat /etc/passwd | grep '^" + str(username) + "'")
         if out != []:
-            self.logger.debug("pwd out:" + str(out[0]))
+            self.log.debug("pwd out:" + str(out[0]))
             if (str(out[0]).split(":")[1] == "x"):
                 out = self.sys("cat /etc/shadow | grep '^" + str(username) + "'")
                 if out != []:
@@ -1073,7 +1073,7 @@ class Machine(object):
                 groups = groups[index:len(groups)]
             return groups
         except Exception, e:
-            self.logger.debug("No group found for user:" + str(username) + ", err:" + str(e))
+            self.log.debug("No group found for user:" + str(username) + ", err:" + str(e))
 
     ###############################################################################################
     #                       File Related Utils                                                    #
@@ -1381,7 +1381,7 @@ class Machine(object):
                     (ret['dd_partial_rec_out'] != ret['dd_partial_rec_in'])):
                 raise CommandExitCodeException('dd in records do not match out records in '
                                                'transfer')
-            self.logger.debug('Done with dd, copied:{0} bytes, {1} fullrecords, {2} partrecords - '
+            self.log.debug('Done with dd, copied:{0} bytes, {1} fullrecords, {2} partrecords - '
                            'over elapsed:{3}'.format(ret['dd_bytes'],
                                                      ret['dd_full_rec_out'],
                                                      ret['dd_partial_rec_out'],
@@ -1429,7 +1429,7 @@ class Machine(object):
                 dfargs = " ".join(dfargs)
         cmd = 'df -P {0} {1}'.format(dfargs, path)
         if verbose:
-            self.logger.debug('get_df_info_at_path cmd:' + str(cmd))
+            self.log.debug('get_df_info_at_path cmd:' + str(cmd))
         output = self.sys(cmd, code=0, verbose=verbose)
         # Get the presented fields from commands output,
         # Convert to lowercase, use this as our dict keys
@@ -1465,10 +1465,10 @@ class Machine(object):
         '''
         filepath = str(filepath).strip()
         out = self.cmd("ls " + filepath)['status']
-        self.logger.debug('exit code:' + str(out))
+        self.log.debug('exit code:' + str(out))
         if out != 0:
             raise Exception("File:" + filepath + " not found on instance:" + self.id)
-        self.logger.debug('File ' + filepath + ' is present on ' + self.id)
+        self.log.debug('File ' + filepath + ' is present on ' + self.id)
 
     #############################################################################################
     #                   Misc Utilities

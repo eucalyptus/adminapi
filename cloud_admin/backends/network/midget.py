@@ -77,16 +77,16 @@ class Midget(object):
         if not self.eucaconnection:
             clc_ip = clc_ip or midonet_api_host
             self.eucaconnection = SystemConnection(hostname=clc_ip, password=clc_password)
-        self.logger = Eulogger(identifier='MidoDebug:{0}'.format(self.midonet_api_host))
+        self.log = Eulogger(identifier='MidoDebug:{0}'.format(self.midonet_api_host))
         self.default_indent = ""
         self._euca_instances = {}
         self._protocols = {}
 
     def debug(self, msg):
-        self.logger.debug(msg)
+        self.log.debug(msg)
 
     def info(self, msg):
-        self.logger.info(msg)
+        self.log.info(msg)
 
     def _indent_table_buf(self, table, indent=None):
         if indent is None:
@@ -340,7 +340,7 @@ class Midget(object):
             if loglevel:
                 assert isinstance(loglevel, basestring), "loglevel must be type string or None"
                 loglevel = str(loglevel).lower()
-                printmethod = getattr(self.logger, loglevel, None)
+                printmethod = getattr(self.log, loglevel, None)
             if not printmethod:
                 def printmethod(x):
                     print x
@@ -1336,7 +1336,7 @@ class Midget(object):
         node = instance.tags.get('euca:node', None)
         if not node:
             if instance.state != 'running':
-                self.logger.error('Node, not found. Try again when instance is running, '
+                self.log.error('Node, not found. Try again when instance is running, '
                                   'current state:{0}'.format(instance.state))
             raise ValueError('Node for instance:"{0}" not found?'.format(instance.id))
         host = self.get_host_by_hostname(node)
@@ -1543,7 +1543,7 @@ class Midget(object):
         if rule:
             self.show_rules(rule)
         else:
-            self.logger.debug('No Rules Found')
+            self.log.debug('No Rules Found')
 
     def get_clc_veth_for_subnet(self, subnet):
         if not subnet:
