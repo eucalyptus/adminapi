@@ -543,7 +543,10 @@ class SCTP(object):
             ptype = CHUNK_INIT
             tag = 0  # Verification tag is set to 0 for init
         if tag is None:
-            tag = getrandbits(16)
+            if ptype == CHUNK_INIT:
+                tag = 0
+            else:
+                tag = getrandbits(16)
         self.tag = tag
         chunk = chunk or ChunkHdr(chunktype=ptype, payload=payload)
         self.chunk = chunk.pack()
