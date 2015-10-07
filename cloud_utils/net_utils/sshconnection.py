@@ -220,6 +220,7 @@ class SshConnection():
                  find_keys=True,
                  enable_ipv6_dns=False,
                  timeout=60,
+                 banner_timeout=None,
                  retry=1,
                  logger=None,
                  verbose=False,
@@ -264,6 +265,7 @@ class SshConnection():
         self.proxy_keypath = proxy_keypath
         self.enable_ipv6_dns = enable_ipv6_dns
         self.timeout = timeout
+        self.banner_timeout = banner_timeout
         self.retry = retry
         self.log = logger
         self.verbose = verbose
@@ -309,6 +311,7 @@ class SshConnection():
                                                       proxy_keypath=self.proxy_keypath,
                                                       enable_ipv6_dns=self.enable_ipv6_dns,
                                                       timeout=self.timeout,
+                                                      banner_timeout=self.banner_timeout,
                                                       retry=self.retry,
                                                       verbose=self.debug_connect)
         else:
@@ -667,6 +670,7 @@ class SshConnection():
                                                   proxy_keypath=self.proxy_keypath,
                                                   enable_ipv6_dns=self.enable_ipv6_dns,
                                                   timeout=self.timeout,
+                                                  banner_timeout=self.banner_timeout,
                                                   retry=self.retry,
                                                   verbose=self.debug_connect)
 
@@ -683,6 +687,7 @@ class SshConnection():
                            enable_ipv6_dns=None,
                            port=22,
                            timeout=60,
+                           banner_timeout=60,
                            retry=1,
                            verbose=False):
         """
@@ -796,7 +801,7 @@ class SshConnection():
                                    verbose=verbose)
                         # ssh._auth(username, password, None, key_files, True, True)
                         ssh.connect(ip, port=port, username=username, key_filename=keypath,
-                                    timeout=timeout)
+                                    timeout=timeout, banner_timeout=banner_timeout)
                         connected = True
 
                 except paramiko.ssh_exception.SSHException, se:

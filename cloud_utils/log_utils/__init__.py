@@ -268,9 +268,9 @@ def printinfo(func):
                           ":" + str(func.func_code.co_firstlineno) + ")Starting method: " + \
                           str(func.func_name) + '(' + arg_string + kw_string + ')'
             debugmethod = None
-            if selfobj and hasattr(selfobj, 'logger'):
-                logger = getattr(selfobj, 'logger')
-                debug = getattr(logger, 'debug')
+            if selfobj and hasattr(selfobj, 'log'):
+                logger = getattr(selfobj, 'log', None)
+                debug = getattr(logger, 'debug', None)
                 if isinstance(debug, types.MethodType):
                     debugmethod = debug
             if debugmethod:
@@ -279,7 +279,7 @@ def printinfo(func):
                 print debugstring
         except Exception, e:
             print get_traceback()
-            print 'printinfo method decorator error:'+str(e)
+            print 'printinfo method decorator error:' + str(e)
         return func(*func_args, **func_kwargs)
     return methdecor
 

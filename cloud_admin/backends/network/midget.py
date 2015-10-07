@@ -1333,13 +1333,14 @@ class Midget(object):
 
     def get_host_for_instance(self, instance):
         instance = self._get_instance(instance)
-        node = instance.tags.get('euca:node', None)
+        node = self.eucaconnection.get_hosts_for_node_controllers(instanceid=instance.id)
         if not node:
             if instance.state != 'running':
                 self.log.error('Node, not found. Try again when instance is running, '
                                   'current state:{0}'.format(instance.state))
             raise ValueError('Node for instance:"{0}" not found?'.format(instance.id))
-        host = self.get_host_by_hostname(node)
+        node = node[0]
+        host = self.get_host_by_hostname(node.hostname)
         if not host:
             raise ValueError('Mido Host for instance:"{0}" not found?'.format(instance.id))
         return host

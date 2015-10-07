@@ -321,8 +321,8 @@ class Machine(object):
     def update_repos(self):
         self.package_manager.update_repos()
 
-    def get_package_info(self):
-        self.package_manager.get_package_info()
+    def get_package_info(self, package_name):
+        self.package_manager.get_package_info(package_name)
 
     def get_installed_packages(self):
         self.package_manager.get_installed_packages()

@@ -141,6 +141,9 @@ class SystemConnection(ServiceConnection):
         return self.get_hosts_by_service_type(servicetype='eucalyptus')
 
     def get_hosts_for_node_controllers(self, partition=None, instanceid=None):
+        if instanceid is not None and not isinstance(instanceid, basestring):
+            raise ValueError('Instance id not of string type, got:"{0}"/"{1}"'
+                             .format(instanceid, type(instanceid)))
         ncs = self.get_hosts_by_service_type(servicetype='node')
         if not partition and not instanceid:
             return ncs

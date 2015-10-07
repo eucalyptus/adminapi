@@ -108,7 +108,7 @@ class Yum(PackageManager):
         return self.machine.sys("yum upgrade -y " + gpg_flag + " " + package, timeout=480)
 
     def get_package_info(self, package_name):
-        return self.machine.sys('yum info {0}'.format(package_name), code=0)
+        return self.machine.sys('yum info {0}'.format(package_name), code=0, timeout=60)
 
     def get_url_for_package(self, package_name):
         if package_name in self.repo_url_cache:
