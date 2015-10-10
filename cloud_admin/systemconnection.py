@@ -10,7 +10,7 @@ from cloud_admin.hosts.eucahost import EucaHost
 from cloud_admin.services.node_service import EucaNodeService
 from cloud_utils.system_utils.machine import Machine
 from cloud_utils.log_utils.eulogger import Eulogger
-from cloud_utils.log_utils import markup
+from cloud_utils.log_utils import markup, get_traceback
 
 
 class SystemConnection(ServiceConnection):
@@ -148,16 +148,22 @@ class SystemConnection(ServiceConnection):
         if not partition and not instanceid:
             return ncs
         retlist = []
-        for nc in ncs:
-            if instanceid:
-                for service in nc.services:
-                    if isinstance(service, EucaNodeService):
-                        instances = getattr(service, 'instances', [])
-                for instance in instances:
-                    if instance.id == instanceid:
-                        return [nc]
-            if partition and partition in nc.partitions:
-                retlist.append(nc)
+        if instanceid:
+            try:
+                reservation = self.ec2_connection.get_all_instances(instance_ids=[instanceid])
+            except:
+                self.log.error('{0}\nFailed to find instance:"{1}" on system'
+                               .format(get_traceback(), instanceid))
+                return []
+            if reservation:
+                instance = reservation[0].instances[0]
+                node_addr = instance.tags.get('euca:node')
+                if node_addr:
+                    for nc in ncs:
+                        if nc.hostname == node_addr:
+                            return [nc]
+        if partition and partition in nc.partitions:
+            retlist.append(nc)
         return retlist
 
     def get_hosts_for_cluster_controllers(self, partition=None):

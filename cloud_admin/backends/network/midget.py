@@ -1333,6 +1333,7 @@ class Midget(object):
 
     def get_host_for_instance(self, instance):
         instance = self._get_instance(instance)
+        instance.update()
         node = self.eucaconnection.get_hosts_for_node_controllers(instanceid=instance.id)
         if not node:
             if instance.state != 'running':
@@ -1501,19 +1502,7 @@ class Midget(object):
             return pt
 
     def show_instance_meta_data_artifacts(self, instance, printmethod=None, printme=True):
-        instance = self._get_instance(instance)
-        buf = ""
-        title = markup("INSTANCE META DATA ARTIFACTS:{0}".format(instance.id))
-        pt = PrettyTable([title])
-        pt.align['title'] = 'l'
-        for group in instance.groups:
-            buf += str(self.show_security_group(group=group, printme=False))
-        pt.add_row([buf])
-        if printme:
-            printmethod = printmethod or self.debug
-            printmethod('\n{0}\n'.format(pt))
-        else:
-            return pt
+        self.log.info('Not implemented yet')
 
 
     def get_euca_subnet_metadata_addr(self, subnet):

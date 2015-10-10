@@ -67,6 +67,11 @@ class EucaHost(Machine):
     def show(self):
         return self.connection.show_hosts(hosts=self)
 
+    def update_euca_services(self):
+        for service in self.services:
+            if hasattr(service, 'update'):
+                service.update()
+
     @property
     def euca_service_codes(self):
         """
