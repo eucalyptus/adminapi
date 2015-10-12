@@ -471,13 +471,11 @@ if __name__ == "__main__":
                     done = True
                     continue
                 # Parse IP header...
+                iphdr = IPHdr(data)
                 if socktype == socket.SOCK_STREAM:
-                    iphdr = IPHdr()
-                    iphdr.dst_addr = HOST
-                    iphdr.protocol = PROTO
-                    iphdr.src_addr = ip
-                else:
-                    iphdr = IPHdr(data)
+                    iphdr.dst_addr = iphdr.dst_addr or HOST
+                    iphdr.protocol = iphdr.protocol or PROTO
+                    iphdr.src_addr = iphdr.src_addr or ip
 
                 # Check packet info against the provided filters...
                 if PROTO and PROTO != iphdr.protocol:
