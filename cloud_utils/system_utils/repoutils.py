@@ -114,7 +114,7 @@ class Yum(PackageManager):
         if package_name in self.repo_url_cache:
             if (time.time() - self.repo_url_cache[package_name]['updated']) <= 10:
                 return self.repo_url_cache[package_name]['url']
-        out = self.machine.sys('yumdownloader --urls eucalyptus -q', code=0)
+        out = self.machine.sys('yumdownloader --urls {0} -q'.format(package_name), code=0)
         for line in out:
             match = re.match("^(http*.*.rpm)$", line)
             if match:
@@ -214,6 +214,7 @@ class Yum(PackageManager):
         for name in filters:
             if name in values:
                 setattr(ret, name, values[name])
+        setattr(ret, 'filepath', str(filepath or ""))
         return ret
 
     def add_repo(self, url, name=None):

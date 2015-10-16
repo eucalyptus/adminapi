@@ -41,6 +41,7 @@ class Machine(object):
                  timeout=120,
                  ssh_retry=2,
                  logger=None,
+                 log_level='INFO',
                  verbose=True):
         """
         A basic (primarily Linux) Machine interface. This interface is intended to provide a
@@ -88,7 +89,7 @@ class Machine(object):
         self.password = password
         self.verbose = verbose
         if logger is None:
-            logger = Eulogger(identifier=self._identifier)
+            logger = Eulogger(identifier=self._identifier, stdout_level=log_level)
         self.log = logger
         self.ssh_connect_kwargs = {'host': self.hostname,
                                    'username': self.username,

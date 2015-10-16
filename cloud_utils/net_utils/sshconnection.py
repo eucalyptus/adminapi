@@ -403,7 +403,7 @@ class SshConnection():
         elapsed = time.time() - start
         raise CommandTimeoutException(
             "SSH Command timer fired after " + str(int(elapsed)) + " seconds. Cmd:'" +
-            str(cmd) + "'")
+            str(cmd) + "'", elapsed=elapsed)
 
     def sys(self, cmd, verbose=False, timeout=120, listformat=True, enable_debug=False, code=None):
         """
@@ -426,7 +426,8 @@ class SshConnection():
             if verbose:
                 self.debug(output)
             raise CommandExitCodeException('Cmd:' + str(cmd) + ' failed with status code:' +
-                                           str(out['status']) + ", output:" + str(output))
+                                           str(out['status']) + ", output:" + str(output),
+                                           status=out['status'])
         return output
 
     def cmd(self,
@@ -532,7 +533,7 @@ class SshConnection():
                 if elapsed >= timeout and len(rl) < 1:
                     raise CommandTimeoutException(
                         "SSH Command timer fired after " + str(int(elapsed)) + " seconds. Cmd:'" +
-                        str(cmd) + "'")
+                        str(cmd) + "'", elapsed=elapsed)
                 if len(rl) > 0:
                     cmddebug('ssh cmd: got input on recv channel')
                     while chan.recv_ready():
@@ -650,7 +651,7 @@ class SshConnection():
             self.lastexitcode = SshConnection.cmd_timeout_err_code
             elapsed = str(int(time.time() - start))
             self.debug("Command (" + cmd + ") timeout exception after " + str(elapsed) +
-                       " seconds\nException")
+                       " seconds\nException", elapsed=elapsed)
             raise cte
         return ret
 
@@ -1054,16 +1055,18 @@ class SshConnection():
 
 
 class CommandExitCodeException(Exception):
-    def __init__(self, value):
+    def __init__(self, value, status=None):
         self.value = value
+        self.status = status
 
     def __str__(self):
         return repr(self.value)
 
 
 class CommandTimeoutException(Exception):
-    def __init__(self, value):
+    def __init__(self, value, elapsed=None):
         self.value = value
+        self.elapsed = elapsed
 
     def __str__(self):
         return repr(self.value)

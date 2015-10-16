@@ -157,14 +157,14 @@ class AutoCreds(Eucarc):
                  proxy_password=None,
                  proxy_keypath=None,
                  logger=None,
-                 loglevel='INFO',
+                 log_level='INFO',
                  eucarc_obj=None,
                  existing_certs=True,
                  service_connection=None,
                  keysdir=None,
                  string=None,
                  clc_connect_kwargs=None):
-        super(AutoCreds, self).__init__(logger=logger, loglevel=loglevel)
+        super(AutoCreds, self).__init__(logger=logger, loglevel=log_level)
         self._serviceconnection = service_connection
         self._clc_ip = hostname
         self._string = string

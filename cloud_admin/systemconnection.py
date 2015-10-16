@@ -11,6 +11,7 @@ from cloud_admin.services.node_service import EucaNodeService
 from cloud_utils.system_utils.machine import Machine
 from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_utils.log_utils import markup, get_traceback
+from cloud_utils.net_utils.sshconnection import CommandExitCodeException
 
 
 class SystemConnection(ServiceConnection):
@@ -42,7 +43,8 @@ class SystemConnection(ServiceConnection):
             'proxy_hostname': proxy_hostname,
             'proxy_username': proxy_username or username,
             'proxy_password': proxy_password or password,
-            'proxy_keypath': proxy_keypath or keypath
+            'proxy_keypath': proxy_keypath or keypath,
+            'log_level': log_level
         }
         self._clc_machine = None
         self.hostname = hostname
@@ -188,17 +190,12 @@ class SystemConnection(ServiceConnection):
 
     def get_hosts_for_ufs(self):
         ufs = None
-        out = self.get_hosts_by_service_type(servicetype='user-api')
-        if out:
-            ufs = out[0]
-        return ufs
+        return self.get_hosts_by_service_type(servicetype='user-api')
+
 
     def get_hosts_for_walrus(self):
         walrus = None
-        out = self.get_hosts_by_service_type(servicetype='walrusbackend')
-        if out:
-            walrus = out[0]
-        return walrus
+        return self.get_hosts_by_service_type(servicetype='walrusbackend')
 
     def show_cloud_legacy_summary(self, repo_info=True, print_method=None, file_path=None,
                                   print_table=True):
@@ -377,6 +374,122 @@ class SystemConnection(ServiceConnection):
             print_method("\n{0}\n".format(pt.get_string()))
         else:
             return pt
+
+    def upgrade_cloud(self, network_mode=None, ccs=None, ncs=None, clcs=None, scs=None, ufs=None,
+                      ws=None, gpgcheck=False,  yum_arg_list=None, dry_run=False, rerun=False):
+        if rerun:
+            if not hasattr(self, '_upgrade_dict'):
+                raise ValueError('self._upgrade_dict not found, can not use "rerun"')
+            return self.upgrade_cloud(**self._upgrade_dict)
+        if yum_arg_list is None:
+            yum_arg_list = []
+        if not isinstance(yum_arg_list, list):
+            yum_arg_list = [yum_arg_list]
+        if not gpgcheck:
+            yum_arg_list.append("--nogpg")
+        yum_args = " -y {0}".format(" ".join(yum_arg_list))
+        # Sort out the host machines by services...
+        known_net_modes = ['EDGE', 'VPCMIDO', 'MANAGED']
+        if network_mode is None:
+            try:
+                cluster_name = self.get_all_cluster_names()[0]
+                prop = self.get_property("{0}.cluster.networkmode".format(cluster_name))
+                network_mode = prop.value
+            except:
+                self.log.error('Could not retrieve network mode for cloud')
+                raise
+        if re.search('MANAGED', network_mode):
+                    network_mode = 'MANAGED'
+        if network_mode not in known_net_modes:
+            raise ValueError('Unknown network mode:{0}, known types {1}'
+                             .format(network_mode, ", ".join(known_net_modes)))
+        # service arrays
+        eucalyptus_cloud_hosts = []
+        eucanetd_hosts = []
+
+        ccs = ccs or self.get_hosts_for_cluster_controllers()
+        ncs = ncs or self.get_hosts_for_node_controllers()
+        clcs = clcs or self.get_hosts_for_cloud_controllers()
+        scs = scs or self.get_hosts_for_storage_controllers()
+        ufs = ufs or self.get_hosts_for_ufs()
+        ws = ws or self.get_hosts_for_walrus()
+
+        upgrade_dict = {'network_mode': network_mode, 'ccs': ccs, 'ncs': ncs,
+                        'clcs': clcs, 'scs': scs, 'ufs': ufs, 'ws': ws, 'gpgcheck': gpgcheck,
+                        'yum_arg_list': yum_arg_list}
+        if dry_run:
+            return upgrade_dict
+        for host in clcs + ufs + scs + ws:
+            if host not in eucalyptus_cloud_hosts:
+                eucalyptus_cloud_hosts.append(host)
+        if network_mode == "MANAGED":
+            eucanetd_hosts = ccs
+        elif network_mode == 'EDGE':
+            eucanetd_hosts = ncs
+        elif network_mode == 'VPCMIDO':
+            eucanetd_hosts = clcs
+        def stop_service(host, service, timeout=300):
+            try:
+                host.sys('service {0} stop'.format(service), code=0, timeout=timeout)
+            except CommandExitCodeException as CE:
+                if CE.status == 2:
+                    # service is already stopped
+                    pass
+                else:
+                    raise
+        try:
+            # Shutdown all the Eucalyptus cloud services...
+            self.log.info('Beginning upgrade. Shutting down all cloud services now...')
+            for host in clcs:
+                stop_service(host, 'eucalyptus-cloud')
+            for host in eucalyptus_cloud_hosts:
+                # Skip the CLCs which have already been stopped
+                if host not in clcs:
+                    stop_service(host, 'eucalyptus-cloud')
+            for host in ccs:
+                stop_service(host, 'eucalyptus-cc')
+            for host in ncs:
+                stop_service(host, 'eucalyptus-nc')
+            for host in eucanetd_hosts:
+                stop_service(host, 'eucanetd')
+
+            # Upgrade packages...
+            self.log.info('Upgrading Eucalyptus packages on all hosts')
+            for host in self.eucahosts.itervalues():
+                host.sys('yum upgrade eucalyptus {0}'.format(yum_args), code=0, timeout=400)
+            self.log.info('Package upgrade complete, restarting cloud services now...')
+            # Start all the Eucalyptus cloud services...
+            # Do the CLCs first than the other Java/Cloud services
+            self.log.info('Starting CLCs...')
+            for host in clcs:
+                host.sys('service eucalyptus-cloud start', code=0, timeout=300)
+            self.log.info('Starting remaining Java Components...')
+            for host in eucalyptus_cloud_hosts:
+                # Skip the CLCs which have already been started
+                if host not in clcs:
+                    host.sys('service eucalyptus-cloud start', code=0, timeout=300)
+            self.log.info('Starting Cluster Controllers...')
+            for host in ccs:
+                host.sys('service eucalyptus-cc start', code=0, timeout=300)
+            self.log.info('Starting Node Controllers...')
+            for host in ncs:
+                host.sys('service eucalyptus-nc start', code=0, timeout=300)
+            self.log.info('Starting Eucanetd...')
+            for host in eucanetd_hosts:
+                host.sys('service eucanetd start', code=0, timeout=300)
+            self.log.info('Upgrade Done')
+        except:
+            self.log.error('Upgrade failed. The upgrade params are found in self._upgrade_dict.'
+                           'These can be used via the "rerun" argument to rerun this upgrade'
+                           'using the same environment/machines')
+            raise
+        finally:
+            # write to this dict for before/after comparison of the cloud after upgrade
+            self._upgrade_dict = upgrade_dict
+
+
+
+
 
     def build_machine_dict_from_config(cls):
         raise NotImplementedError()
