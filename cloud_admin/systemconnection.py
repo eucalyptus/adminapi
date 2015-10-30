@@ -428,6 +428,9 @@ class SystemConnection(ServiceConnection):
             eucanetd_hosts = ncs
         elif network_mode == 'VPCMIDO':
             eucanetd_hosts = clcs
+        else:
+            raise ValueError('Unsupported network mode: "{0}"'.format(network_mode) )
+
         def stop_service(host, service, timeout=300):
             try:
                 host.sys('service {0} stop'.format(service), code=0, timeout=timeout)
