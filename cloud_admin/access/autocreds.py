@@ -540,7 +540,7 @@ class AutoCreds(Eucarc):
         has_sftp_items = False
         local_destdir = os.path.abspath(local_destdir)
         for key, value in self.get_eucarc_attrs().iteritems():
-            if re.search('^sftp://', value):
+            if isinstance(value, basestring) and re.search('^sftp://', value):
                 has_sftp_items = True
         if has_sftp_items:
             if not machine:
@@ -554,11 +554,13 @@ class AutoCreds(Eucarc):
         self.log.debug('Finished creating new local creds at: {0}'.format(local_destdir))
         # Now write the eucarc file. Any downloaded files should have updated the
         # local euarc attrs replacing the sftp uri with a local file path
+        if local_destdir and not os.path.exists(local_destdir):
+            os.makedirs(local_destdir)
         eucarc_path = os.path.join(local_destdir, 'eucarc')
         with open(eucarc_path, 'w') as eucarc:
             eucarc.seek(0)
             for key, value in self.get_eucarc_attrs().iteritems():
-                if not re.search('^sftp://', value):
+                if isinstance(value, basestring) and not re.search('^sftp://', value):
                     eucarc.write("export {0}={1}\n".format(str(key).upper(), value))
             eucarc.flush()
         self.log.debug('Finished creating new local creds at: {0}'.format(local_destdir))

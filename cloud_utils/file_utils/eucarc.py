@@ -37,6 +37,7 @@ class Eucarc(object):
         # init most common eucarc values to None...
         self._account_name = None
         self._account_id = None
+        self._user_id = None
         self._user_name = None
         self._access_key = None
         self._secret_key = None
@@ -57,7 +58,6 @@ class Eucarc(object):
         self.ec2_jvm_args = None
         self.ec2_private_key = None
         self.ec2_secret_key = None
-        self.ec2_user_id = None
         self.eucalyptus_cert = None
         self.eustore_url = 'http://emis.eucalyptus.com/'
 
@@ -101,6 +101,14 @@ class Eucarc(object):
     @account_name.setter
     def account_name(self, value):
         self._account_name = value
+
+    @property
+    def user_id(self):
+        return self._user_id or self._account_id
+
+    @user_id.setter
+    def ec2_user_id(self, value):
+        self._user_id = value
 
     @property
     def user_name(self):
@@ -254,6 +262,14 @@ class Eucarc(object):
     @ec2_account_id.setter
     def ec2_account_id(self, value):
         self._account_id = value
+
+    @property
+    def ec2_user_id(self):
+        return self._user_id or self._account_id
+
+    @ec2_user_id.setter
+    def ec2_user_id(self, value):
+        self._user_id = value
 
     @property
     def ec2_account_number(self):

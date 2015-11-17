@@ -2,6 +2,7 @@
 from cloud_admin.services import EucaBaseObj
 from cloud_utils.log_utils import get_traceback
 from cloud_utils.log_utils import markup
+import re
 from prettytable import PrettyTable, ALL
 
 
@@ -201,16 +202,21 @@ class EucaProperty(EucaBaseObj):
             self.__dict__.update(new_prop.__dict__)
             return self
 
-    def modify_value(self, value):
+    def modify_value(self, value, regex=None):
         """
         Modify this property's value.
         :param value: The new value to request this property be modified to.
+        :param regex: regex used to validate resulting property value in response.
+                      default regex will allow result to match 'value' or '*'+
         :returns: modified EucaProperty
         :raise: ValueError if modified property value does not match requested value
         """
         self.connection.modify_property(self, value)
         self.update()
-        if str(self.value) != str(value):
-            raise ValueError('Modified property value does not match requested value:{0}, '
-                             'current:{1}'.format(value, self.value))
+        if regex is None:
+            regex = "{0}|\*+".format(value)
+
+        if not re.match(regex, self.value):
+            raise ValueError('Modified property value does not match expected regex:{0}, '
+                             'current:{1}'.format(regex, self.value))
         return self
