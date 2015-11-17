@@ -1233,8 +1233,12 @@ class ServiceConnection(AWSQueryConnection):
         # Create a large table showing the service states, grab the first 3 columns
         # for type, name, state, and zone
         servpt = self.show_services(total, print_table=False)
-        serv_lines = servpt.get_string(border=0, padding_width=2,
+        spt_lines = servpt.get_string(border=0, padding_width=2,
                                        fields=servpt._field_names[0: columns]).splitlines()
+        # Remove duplicate service lines
+        serv_lines = []
+        [serv_lines.append(i) for i in spt_lines if not serv_lines.count(i)]
+
         header = serv_lines[0]
         ansi_escape = re.compile(r'\x1b[^m]*m')
         # Now build the machine table...
@@ -1258,8 +1262,9 @@ class ServiceConnection(AWSQueryConnection):
                     # Pull matching lines out of the pre-formatted service table...
                     if (splitline and re.match("^{0}$".format(serv.type), line_type) and
                             re.match("^{0}$".format(serv.name), line_name)):
-                        # Add this line to the services to be displayed for this machine
-                        servbuf += line + "\n"
+                        if not line in servbuf:
+                            # Add this line to the services to be displayed for this machine
+                            servbuf += line + "\n"
                 if serv.type == 'node' and getattr(serv, 'instances', None):
                     servbuf += "\n" + markup('INSTANCES', [1, 4]) + " \n"
                     for x in serv.instances:
