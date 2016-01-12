@@ -92,6 +92,8 @@ def markup(text, markups=[1], resetvalue="\033[0m", force=None, allow_nonstandar
         return text
     if not isinstance(markups, list):
         markups = [markups]
+    # Make unique
+    markups = list(set(markups))
     if do_html:
         startmarkup, endmarkup = _ascii_markups_to_html_tags(markups, open_bracket=html_open,
                                                              close_bracket=html_close)
@@ -128,10 +130,13 @@ def markup(text, markups=[1], resetvalue="\033[0m", force=None, allow_nonstandar
 
 
 def _standardize_markups(markups):
+    """
+    When terminals dont support the extended set of markup values
+    """
     newmarkups = []
     if markups:
         if not isinstance(markups, list):
-            markups = []
+            markups = [markups]
         for markup in markups:
             if markup > 90:
                 newmarkups.append(markup-60)
@@ -139,7 +144,36 @@ def _standardize_markups(markups):
                 newmarkups.append(markup)
     return newmarkups
 
+def red(message, bold=False, markups=[]):
+    markups.append(ForegroundColor.RED)
+    if bold:
+        markups.append(TextStyle.BOLD)
+    return markup(message, markups=markups)
 
+def green(message, bold=False):
+    markups = [ForegroundColor.GREEN]
+    if bold:
+        markups.append(TextStyle.BOLD)
+    return markup(message, markups=markups)
+
+def yellow(message, bold=False):
+    markups = [ForegroundColor.YELLOW]
+    if bold:
+        markups.append(TextStyle.BOLD)
+    return markup(message, markups=markups)
+
+def blue(message, bold=False):
+    markups = [ForegroundColor.BLUE]
+    if bold:
+        markups.append(TextStyle.BOLD)
+    return markup(message, markups=markups)
+
+def cyan(message, bold=False):
+    markups = [ForegroundColor.CYAN]
+    if bold:
+        markups.append(TextStyle.BOLD)
+    return markup(message, markups=markups)
+`
 def _ascii_markups_to_html_tags(markups, open_bracket="<", close_bracket=">"):
     # '<font color="red">This is some text!</font>'
     color = None

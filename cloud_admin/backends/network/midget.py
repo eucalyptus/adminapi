@@ -17,6 +17,7 @@ from boto.ec2.group import Group as BotoGroup
 from boto.ec2.instance import Instance
 from boto.ec2.securitygroup import SecurityGroup, IPPermissions
 from prettytable import PrettyTable
+from json import loads as json_loads
 import requests
 import socket
 import time
@@ -565,26 +566,46 @@ class Midget(object):
         if not isinstance(bgps, list):
             bgps = [bgps]
         port = None
+        host = None
+        bgp_id = None
         pt = None
         for bgp in bgps:
-            if bgp.dto.get('portId') != port:
-                port = bgp.dto.get('portId')
-                if pt is not None:
-                    mainpt.add_row([str(pt)])
-                    mainpt.add_row(["BGP Status:{0}".format(bgp.dto.get('status', None))])
-                port_header = 'BGP INFO FOR PORT:'.format(port)
-                pt = PrettyTable([port_header, 'BGP ID', 'PEER ADDR',
+            port_id = bgp.dto.get('portId')
+            if not port or port.get_id() != port_id:
+                port = self.mapi.get_port(port_id)
+                host_id = port.get_host_id()
+                if host_id:
+                    host = self.mapi.get_host(port.get_host_id())
+                    hostname = host.get_name()
+                else:
+                    host = None
+                    hostname = None
+            interface_name = port.get_interface_name()
+
+            port_header = 'BGP INFO FOR PORT:'.format(port_id)
+            pt = PrettyTable([port_header, 'BGP ID', 'PEER ADDR',
                                   'LOCAL AS', 'PEER AS', 'AD ROUTES'])
-                pt.max_width[port_header] = len(port) or len('BGP INFO FOR PORT:')
-                pt.align[port_header] = 'l'
-            pt.add_row([port,
+            pt.max_width[port_header] = len(port_id) or len('BGP INFO FOR PORT:')
+            pt.align[port_header] = 'l'
+            pt.add_row([port_id,
                         bgp.get_id(),
                         bgp.get_peer_addr(),
                         bgp.get_local_as(),
                         bgp.get_peer_as(),
-                        self._format_ad_routes(bgp.get_ad_routes())])
-        mainpt.add_row([str(pt)])
-        mainpt.add_row(["| BGP Status:{0}".format(bgp.dto.get('status', None))])
+                        "\n".join(self._format_ad_routes(bgp.get_ad_routes()) or [])])
+            # Create a status table for formatting
+            status_pt = PrettyTable(['PORT HOST:{0} ({1} : {2} : {3}/{4})'
+                                     .format(hostname,
+                                             interface_name,
+                                             port.get_port_address(),
+                                             port.get_network_address(),
+                                             port.get_network_length())])
+            status_pt.align = 'l'
+            status_pt.vrules = 2
+            status_pt.hrules = 3
+            status_pt.add_row(["PORT    BGP Status:{0}".format(bgp.dto.get('status', None))])
+            mainpt.add_row([str(pt)])
+            mainpt.add_row([str(status_pt)])
         if printme:
             self.info('\n{0}\n'.format(mainpt))
         else:
@@ -1551,7 +1572,35 @@ class Midget(object):
         vpc = str(vpc).replace('vpc-', 'vn2_')
         self.eucaconnection.clc_machine.sys('ifconfig | grep {0}'.format(vpc), code=0)
 
+    def get_euca_vpc_gateway_mido_hosts(self):
+        gws = self.get_euca_vpc_gateway_info()
+        hosts = self.mapi.get_hosts(query=None)
+        mido_gw_hosts = []
+        for gw in gws:
+            gw_hostname = gw.get('GatewayHost', None)
+            if gw_hostname:
+                for host in hosts:
+                    if gw_hostname == host.get_name():
+                        mido_gw_hosts.append(host)
+                        break
+        return mido_gw_hosts
 
+    def show_gateway_hosts(self):
+        hosts = self.get_euca_vpc_gateway_mido_hosts()
+        self.show_hosts(hosts=hosts)
 
-
-
+    def get_euca_vpc_gateway_info(self):
+        propname = 'cloud.network.network_configuration'
+        prop = self.eucaconnection.get_property(property=propname)
+        if not prop:
+            raise ValueError('Euca Property not found: {0}'.format(propname))
+        value = json_loads(prop.value)
+        try:
+            midocfg = value.get('Mido', {})
+            if not midocfg:
+                self.log.warning("Mido config section not found in euca nework_configuration "
+                                 "property")
+            return midocfg.get('Gateways', {})
+        except KeyError:
+            raise KeyError('get_euca_vpc_gateway_host_addrs: VPC cloud config not found '
+                           'in euca property "network_configuration"')
