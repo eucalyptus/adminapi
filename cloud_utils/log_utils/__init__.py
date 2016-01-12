@@ -173,7 +173,7 @@ def cyan(message, bold=False):
     if bold:
         markups.append(TextStyle.BOLD)
     return markup(message, markups=markups)
-`
+
 def _ascii_markups_to_html_tags(markups, open_bracket="<", close_bracket=">"):
     # '<font color="red">This is some text!</font>'
     color = None
