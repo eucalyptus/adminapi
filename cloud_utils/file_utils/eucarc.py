@@ -396,6 +396,22 @@ class Eucarc(object):
     def aws_secret_key_id(self, value):
         self._secret_key = value
 
+    @property
+    def aws_secret_access_key_id(self):
+        return self._secret_key
+
+    @aws_secret_access_key_id.setter
+    def aws_secret_access_key_id(self, value):
+        self._secret_key = value
+
+    @property
+    def aws_secret_access_key(self):
+        return self._secret_key
+
+    @aws_secret_access_key.setter
+    def aws_secret_access_key(self, value):
+        self._secret_key = value
+
     # Hold these values as properties so the dict only returns cred info, not obj info...
     @property
     def log(self):

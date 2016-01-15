@@ -561,7 +561,7 @@ class AutoCreds(Eucarc):
             eucarc.seek(0)
             for key, value in self.get_eucarc_attrs().iteritems():
                 if isinstance(value, basestring) and not re.search('^sftp://', value):
-                    eucarc.write("export {0}={1}\n".format(str(key).upper(), value))
+                    eucarc.write('export {0}="{1}";\n'.format(str(key).upper(), value))
             eucarc.flush()
         self.log.debug('Finished creating new local creds at: {0}'.format(local_destdir))
 
