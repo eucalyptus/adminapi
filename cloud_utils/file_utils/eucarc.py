@@ -107,7 +107,7 @@ class Eucarc(object):
         return self._user_id or self._account_id
 
     @user_id.setter
-    def ec2_user_id(self, value):
+    def user_id(self, value):
         self._user_id = value
 
     @property
@@ -127,11 +127,27 @@ class Eucarc(object):
         self._access_key = value
 
     @property
+    def access_key_id(self):
+        return self._access_key
+
+    @access_key_id.setter
+    def access_key_id(self, value):
+        self._access_key = value
+
+    @property
     def secret_key(self):
         return self._secret_key
 
     @secret_key.setter
     def secret_key(self, value):
+        self._secret_key = value
+
+    @property
+    def secret_key_id(self):
+        return self._secret_key
+
+    @secret_key_id.setter
+    def secret_key_id(self, value):
         self._secret_key = value
 
 
@@ -296,6 +312,14 @@ class Eucarc(object):
         self._access_key = value
 
     @property
+    def ec2_access_key_id(self):
+        return self._access_key
+
+    @ec2_access_key_id.setter
+    def ec2_access_key_id(self, value):
+        self._access_key = value
+
+    @property
     def ec2_secret_key(self):
         return self._secret_key
 
@@ -303,8 +327,13 @@ class Eucarc(object):
     def ec2_secret_key(self, value):
         self._secret_key = value
 
+    @property
+    def ec2_secret_key_id(self):
+        return self._secret_key
 
-
+    @ec2_secret_key_id.setter
+    def ec2_secret_key_id(self, value):
+        self._secret_key = value
 
 
 
@@ -344,11 +373,27 @@ class Eucarc(object):
         self._access_key = value
 
     @property
+    def aws_access_key_id(self):
+        return self._access_key
+
+    @aws_access_key_id.setter
+    def aws_access_key_id(self, value):
+        self._access_key = value
+
+    @property
     def aws_secret_key(self):
         return self._secret_key
 
     @aws_secret_key.setter
     def aws_secret_key(self, value):
+        self._secret_key = value
+
+    @property
+    def aws_secret_key_id(self):
+        return self._secret_key
+
+    @aws_secret_key_id.setter
+    def aws_secret_key_id(self, value):
         self._secret_key = value
 
     # Hold these values as properties so the dict only returns cred info, not obj info...
