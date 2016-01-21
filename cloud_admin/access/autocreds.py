@@ -521,7 +521,7 @@ class AutoCreds(Eucarc):
                 raise PE
         return ret
 
-    def create_local_creds(self, local_destdir, machine=None, overwrite=False):
+    def create_local_creds(self, local_destdir, machine=None, keydir=None, overwrite=False):
         """
         Attempts to create a local set of files containing the current credential artifacts
         in this AutoCreds obj. The following files will be written to the provided
@@ -537,6 +537,8 @@ class AutoCreds(Eucarc):
         :params overwrite: bool, if True will overwrite any existing items at 'local_destdir'
         """
         machine = machine or self.creds_machine
+        if keydir is None:
+            keydir = "EUCA_KEY_DIR=$(cd $(dirname ${BASH_SOURCE:-$0}); pwd -P)"
         has_sftp_items = False
         local_destdir = os.path.abspath(local_destdir)
         for key, value in self.get_eucarc_attrs().iteritems():
@@ -559,6 +561,7 @@ class AutoCreds(Eucarc):
         eucarc_path = os.path.join(local_destdir, 'eucarc')
         with open(eucarc_path, 'w') as eucarc:
             eucarc.seek(0)
+            eucarc.write(keydir + "\n")
             for key, value in self.get_eucarc_attrs().iteritems():
                 if isinstance(value, basestring) and not re.search('^sftp://', value):
                     eucarc.write('export {0}="{1}";\n'.format(str(key).upper(), value))
