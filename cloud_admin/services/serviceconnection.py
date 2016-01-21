@@ -82,6 +82,8 @@ cad.show_storage_controllers()
 """
 
 import copy
+import errno
+import os
 import re
 import time
 from prettytable import PrettyTable
@@ -108,6 +110,7 @@ from cloud_admin.services.node_service import EucaNodeService, SHOW_NODES
 from cloud_admin.services.walrus_service import EucaWalrusBackendService
 from cloud_admin.services.arbitrator_service import EucaArbitratorService
 from cloud_admin.services.ufs import Ufs
+from cloud_admin.services.service_certificate import ServiceCertificate
 from cloud_admin.services.vmware_broker_service import EucaVMwareBrokerService
 from cloud_admin.services.services import (
     EucaService,
@@ -1182,6 +1185,41 @@ class ServiceConnection(AWSQueryConnection):
         :param prop_names: property names used to filter query response
         """
         return SHOW_PROPERTIES_NARROW(self, *args, **kwargs)
+
+    ###############################################################################################
+    #                           Cloud Service Cert Methods (ie: cloud-cert.pem)                   #
+    ###############################################################################################
+
+    def get_service_certs(self, version='eucalyptus', digest='SHA-256', certformat='pem'):
+        params={'Version':version, 'FingerprintDigest': digest, 'Format': certformat}
+        return self._get_list_request(action='DescribeServiceCertificates',
+                                      service=ServiceCertificate, params=params)
+
+    def write_service_cert_to_file(self, filepath, machine=None, certbody=None):
+        if not certbody:
+            certs = self.get_service_certs()
+            if not certs:
+                raise ValueError('No service certs found in DescribeServiceCerts response')
+            cert = certs[0]
+            certbody = cert.certificate
+            if not certbody:
+                raise ValueError('Certbody not found in retrieved cert')
+        dirpath = os.path.dirname(filepath)
+        if machine:
+            machine.sys('mkdir -p {0}'.format(dirpath), code=0)
+            machine.sys('printf {0} > {1}'.format(certbody, filepath), code=0)
+        else:
+            if not os.path.exists(dirpath):
+                try:
+                    os.makedirs(dirpath)
+                except OSError as exc:
+                    if exc.errno == errno.EEXIST:
+                        self.log.debug('Dir already exists, not creating:"{0}"'.format(dirpath))
+                        raise
+            with open(filepath, 'w') as certfile:
+                certfile.write(certbody)
+                certfile.flush()
+
 
     ###############################################################################################
     #                           Machine/Host Methods                                              #

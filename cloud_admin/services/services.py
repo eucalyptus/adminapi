@@ -855,7 +855,7 @@ class EucaComponentService(EucaService):
             except Exception as LE:
                 if silent:
                     errmsg = "{0}\n{1}\n".format(get_traceback(), str(LE))
-                    self.connection.err_method('{0}Update failed. Node Controller: {1} not found'
+                    self.connection.err_method('{0}Update failed. {1} not found'
                                                .format(errmsg, self.name))
                     return None
                 else:
