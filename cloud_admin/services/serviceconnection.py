@@ -1195,7 +1195,7 @@ class ServiceConnection(AWSQueryConnection):
         return self._get_list_request(action='DescribeServiceCertificates',
                                       service=ServiceCertificate, params=params)
 
-    def write_service_cert_to_file(self, filepath, machine=None, certbody=None):
+    def write_service_cert_to_file(self, filepath='cloud-cert.pem', machine=None, certbody=None):
         if not certbody:
             certs = self.get_service_certs()
             if not certs:
@@ -1206,16 +1206,19 @@ class ServiceConnection(AWSQueryConnection):
                 raise ValueError('Certbody not found in retrieved cert')
         dirpath = os.path.dirname(filepath)
         if machine:
-            machine.sys('mkdir -p {0}'.format(dirpath), code=0)
-            machine.sys('printf {0} > {1}'.format(certbody, filepath), code=0)
+            if dirpath:
+                machine.sys('mkdir -p {0}'.format(dirpath), code=0)
+            machine.sys('printf %s "{0}" > {1}'.format(certbody, filepath), code=0)
         else:
-            if not os.path.exists(dirpath):
-                try:
-                    os.makedirs(dirpath)
-                except OSError as exc:
-                    if exc.errno == errno.EEXIST:
-                        self.log.debug('Dir already exists, not creating:"{0}"'.format(dirpath))
-                        raise
+            if dirpath:
+                if not os.path.exists(dirpath):
+                    try:
+                        os.makedirs(dirpath)
+                    except OSError as exc:
+                        if exc.errno == errno.EEXIST:
+                            self.log.debug('Dir already exists, not creating:"{0}"'
+                                           .format(dirpath))
+                            raise
             with open(filepath, 'w') as certfile:
                 certfile.write(certbody)
                 certfile.flush()
