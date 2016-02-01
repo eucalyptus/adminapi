@@ -15,7 +15,8 @@ class Eucarc(object):
     def __init__(self, filepath=None, string=None, sshconnection=None, keysdir=None, logger=None,
                  loglevel='INFO'):
         """
-        Will populate a eucarc obj with values from a local file, remote file, or string buffer.
+        Will populate a Eucalyptus Runtime Configuration (eucarc) obj with values from a local
+         file, remote file, or string buffer.
         The parser expect values in the following format:
         export key=value
         For example:

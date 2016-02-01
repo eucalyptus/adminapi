@@ -1,6 +1,6 @@
 """
 AutoCreds is a convenience class which attempts to provide utilities for reading in
-credentials data from multiple sources.
+credentials data from multiple sources to build out a specific user's runtime configuration.
 The auto_create flag (set to True by default) attempts  to automatically produce credentials
 based upon the information provided to this AutoCreds obj.
         - If any ssh connect arguments (outside of hostname) are provided then only the remote

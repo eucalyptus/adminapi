@@ -918,6 +918,9 @@ class ServiceConnection(AWSQueryConnection):
         :return: EucaNode obj
         :raise EucaNotFoundException:
         """
+        if not (name and fullname and partition):
+            raise ValueError('No filters provided. name="{0}", fullname="{1}", partition="{2}"'
+                             .format(name, fullname, partition))
         nodes = self.get_all_node_controller_services(
             filter_name=name, filter_fullname=fullname, partition=partition,
             get_instances=get_instances, fail_on_instance_fetch=fail_on_instance_fetch)
@@ -932,8 +935,8 @@ class ServiceConnection(AWSQueryConnection):
                 self.err_method('Found the following nodes:\n{0}'.format(node_string))
             except:
                 pass
-            raise EucaNotFoundException('get_all_node_controller_services: Multiple Matches '
-                                        'found for args:',
+            raise EucaNotFoundException('get_all_node_controller_services: Multiple nodes Match'
+                                        'for filter args:',
                                         notfounddict={'name': name,
                                                       'fullname': fullname,
                                                       'partition': partition})

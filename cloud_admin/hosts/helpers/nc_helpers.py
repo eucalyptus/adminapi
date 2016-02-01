@@ -49,7 +49,7 @@ class NodeControllerHelpers(EucaMachineHelpers):
                'disk_total': None}
         if str(self.eucahost.eucalyptus_conf.LOGLEVEL).lower() not in ['debug', 'trace']:
             self.log.debug('Cant fetch capacity status from node with loglevel: DEBUG < "{0}"'
-                           .format(self.eucahost.eucalyptus_conf.LOG_LEVEL))
+                           .format(self.eucahost.eucalyptus_conf.LOGLEVEL))
             return ret
         euca_path = self.eucahost.eucalyptus_home or ""
         nclog = os.path.join(euca_path, 'var/log/eucalyptus/nc.log')

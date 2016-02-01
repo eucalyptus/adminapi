@@ -188,6 +188,14 @@ class Eulogger(logging.Logger):
     def getChild(self, suffix):
         return self._getChild(self, suffix)
 
+    @classmethod
+    def format_log_level(self, level, default=logging.DEBUG):
+        if isinstance(level, basestring):
+            return getattr(logging, level.upper(), default)
+        if isinstance(level, int):
+            return level
+        return default
+
 
 class AllowLoggerByName(logging.Filter):
     """
