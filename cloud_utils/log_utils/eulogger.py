@@ -52,7 +52,7 @@ class Eulogger(logging.Logger):
 
     def __init__(self,
                  identifier,
-                 parent_logger_name='eutester',
+                 parent_logger_name='eulogger',
                  stdout_level="debug",
                  stdout_format=None,
                  logfile="",

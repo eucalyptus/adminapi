@@ -544,7 +544,7 @@ class AutoCreds(Eucarc):
         :param overwrite: bool, if True will overwrite any existing items at 'local_destdir'
         :param zipfilename: string representing the zip archive filename to be creat in the
                             'local_destdir' directory. If "None" a zip archive will not be created.
-        :param ziponly: boolean, if true only a zip archive will be created 
+        :param ziponly: boolean, if true only a zip archive will be created
         :return: list of filepaths
         """
         def make_local_dir(dirpath):
