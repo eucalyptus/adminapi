@@ -536,11 +536,16 @@ class AutoCreds(Eucarc):
         - Any current attributes with an sftp:// uri will be downloaded to local_destdir. At this
         time the AutoCred eucarc attributes will be updated to represent their now local filepath,
         an the local eucarc written will also reflect the new location.
-        :params local_destdir: local directory to write cred files to.
+
+        :param local_destdir: local directory to write cred files to.
                                Will create if does not exist.
-        :params machine: The Machine() obj to download any sftp:// files from
-        :params overwrite: bool, if True will overwrite any existing items at 'local_destdir'
-        returns list of filepaths
+        :param machine: The Machine() obj to download any sftp:// files from
+        :param keydir: optional String representing path to key dir, otherwise auto-populated
+        :param overwrite: bool, if True will overwrite any existing items at 'local_destdir'
+        :param zipfilename: string representing the zip archive filename to be creat in the
+                            'local_destdir' directory. If "None" a zip archive will not be created.
+        :param ziponly: boolean, if true only a zip archive will be created 
+        :return: list of filepaths
         """
         def make_local_dir(dirpath):
             if dirpath:
