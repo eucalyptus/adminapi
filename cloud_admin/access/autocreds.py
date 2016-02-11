@@ -115,8 +115,11 @@ In [23]: creds.show()
 | UNPARSED LINES         | None                                             |
 +------------------------+--------------------------------------------------+)
 """
+import errno
 import os.path
 import re
+from StringIO import StringIO
+import zipfile
 from urlparse import urlparse
 from cloud_utils.file_utils.eucarc import Eucarc
 from cloud_utils.log_utils import get_traceback
@@ -165,6 +168,7 @@ class AutoCreds(Eucarc):
                  string=None,
                  clc_connect_kwargs=None):
         super(AutoCreds, self).__init__(logger=logger, loglevel=log_level)
+        self._local_files = None
         self._serviceconnection = service_connection
         self._clc_ip = hostname
         self._string = string
@@ -521,7 +525,8 @@ class AutoCreds(Eucarc):
                 raise PE
         return ret
 
-    def create_local_creds(self, local_destdir, machine=None, keydir=None, overwrite=False):
+    def create_local_creds(self, local_destdir, machine=None, keydir=None, overwrite=False,
+                           zipfilename=None, ziponly=False):
         """
         Attempts to create a local set of files containing the current credential artifacts
         in this AutoCreds obj. The following files will be written to the provided
@@ -535,12 +540,35 @@ class AutoCreds(Eucarc):
                                Will create if does not exist.
         :params machine: The Machine() obj to download any sftp:// files from
         :params overwrite: bool, if True will overwrite any existing items at 'local_destdir'
+        returns list of filepaths
         """
+        def make_local_dir(dirpath):
+            if dirpath:
+                try:
+                    os.makedirs(dirpath)
+                except OSError as exc:
+                    if exc.errno == errno.EEXIST and os.path.isdir(dirpath):
+                        pass
+                    else:
+                        raise
+
+
+        filepaths = []
+        local_destdir = os.path.abspath(local_destdir or "")
+        if zipfilename:
+            make_local_dir(local_destdir)
+            zip_path = os.path.join(local_destdir, zipfilename)
+            if os.path.exists(zip_path):
+                raise ValueError('Will not overwrite existing credentials archive at:"{0}"'
+                                 .format(zip_path))
+            zip_file = zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED, False)
+        else:
+            zip_file = None
         machine = machine or self.creds_machine
         if keydir is None:
             keydir = "EUCA_KEY_DIR=$(cd $(dirname ${BASH_SOURCE:-$0}); pwd -P)"
         has_sftp_items = False
-        local_destdir = os.path.abspath(local_destdir)
+
         for key, value in self.get_eucarc_attrs().iteritems():
             if isinstance(value, basestring) and re.search('^sftp://', value):
                 has_sftp_items = True
@@ -551,25 +579,65 @@ class AutoCreds(Eucarc):
                                   'skipping remote creds download')
                 else:
                     machine = self.connect_to_creds_machine()
-            self._download_remote_artifacts(local_destdir=local_destdir, machine=machine,
-                                            overwrite=overwrite)
-        self.log.debug('Finished creating new local creds at: {0}'.format(local_destdir))
-        # Now write the eucarc file. Any downloaded files should have updated the
-        # local euarc attrs replacing the sftp uri with a local file path
-        if local_destdir and not os.path.exists(local_destdir):
-            os.makedirs(local_destdir)
-        eucarc_path = os.path.join(local_destdir, 'eucarc')
-        with open(eucarc_path, 'w') as eucarc:
-            eucarc.seek(0)
-            eucarc.write(keydir + "\n")
+            if zip_file and ziponly:
+                filepaths = self._download_remote_artifacts(local_destdir=None,
+                                                            machine=machine,
+                                                            overwrite=overwrite,
+                                                            zip_file=zip_file)
+            else:
+                filepaths = self._download_remote_artifacts(local_destdir=local_destdir,
+                                                            machine=machine,
+                                                            overwrite=overwrite)
+        if zip_file and ziponly:
+            if self.serviceconnection is not None:
+                certs = self.serviceconnection.get_service_certs()
+                if not certs:
+                    raise ValueError('No service certs found in DescribeServiceCerts response')
+                cert = certs[0]
+                certbody = cert.certificate
+                if not certbody:
+                    raise ValueError('Certbody not found in retrieved cert')
+                zip_file.writestr('cloud-cert.pem', certbody)
+            eucarc = ""
+
+            eucarc += keydir + "\n"
             for key, value in self.get_eucarc_attrs().iteritems():
                 if isinstance(value, basestring) and not re.search('^sftp://', value):
-                    eucarc.write('export {0}="{1}";\n'.format(str(key).upper(), value))
-            eucarc.flush()
-        self.log.debug('Finished creating new local creds at: {0}'.format(local_destdir))
+                    eucarc += 'export {0}="{1}";\n'.format(str(key).upper(), value)
+            zip_file.writestr('eucarc', eucarc)
+            zip_file.close()
+            filepaths.append(zipfilename)
+        else:
+            # Now write the eucarc file. Any downloaded files should have updated the
+            # local euarc attrs replacing the sftp uri with a local file path
+            make_local_dir(local_destdir)
+            cloud_cert_path = os.path.join(local_destdir, 'cloud-cert.pem')
+            if os.path.exists(cloud_cert_path):
+                filepaths.append(cloud_cert_path)
+            elif self.serviceconnection is not None:
+                self.serviceconnection.write_service_cert_to_file(cloud_cert_path)
+                filepaths.append(cloud_cert_path)
+            eucarc_path = os.path.join(local_destdir, 'eucarc')
+            filepaths.append(eucarc_path)
+            with open(eucarc_path, 'w') as eucarc:
+                eucarc.seek(0)
+                eucarc.write(keydir + "\n")
+                for key, value in self.get_eucarc_attrs().iteritems():
+                    if isinstance(value, basestring) and not re.search('^sftp://', value):
+                        eucarc.write('export {0}="{1}";\n'.format(str(key).upper(), value))
+                eucarc.flush()
+            self.log.debug('Finished creating new local creds at: {0}'.format(local_destdir))
+            self._local_files = filepaths
+            if zip_file:
+                for path in filepaths:
+                    fname = os.path.basename(path)
+                    zip_file.write(path, fname)
+                zip_file.close()
+                filepaths.append(zipfilename)
+        return filepaths
 
-    def _download_remote_artifacts(self, local_destdir, machine, sftp_prefix='^sftp://',
-                                   overwrite=False):
+    def _download_remote_artifacts(self, local_destdir, machine, zip_file=None,
+                                   sftp_prefix='^sftp://', overwrite=False, maxlen=5000000):
         """
         Attempts to download any eucarc artifacts which current has an sftp:// url.
         To see these values use self.show() or self.get_eucarc_attrs() dict.
@@ -578,12 +646,19 @@ class AutoCreds(Eucarc):
         :params sftp_prefeix: The search criteria for determining which eucarc artifacts
                               should be downloaded.
         :params overwrite: bool, if True will overwrite any existing items at 'local_destdir'
-        returns the local path (string) items were downloaded to upon success
+        returns list. The local paths (strings) items were downloaded to upon success
         """
+        filepaths = []
         if not isinstance(machine, Machine):
             raise ValueError('_download_remote_artifacts requires Machine() type. Got:"{0}/{1}"'
                              .format(machine, type(machine)))
-        if not isinstance(local_destdir, basestring):
+        if zip_file is not None:
+            if not isinstance(zip_file, zipfile.ZipFile):
+                raise TypeError('zip_file must be of type ZipFile, got:"{0}/{1}"'
+                                .format(zipfile, type(zipfile)))
+            if local_destdir is not None:
+                raise ValueError('local_destdir must be None if providing a zipfile')
+        elif not isinstance(local_destdir, basestring):
             raise ValueError('_download_remote_artifacts requires string for local_destdir(). '
                              'Got:"{0}/{1}"'.format(local_destdir, type(local_destdir)))
         if not os.path.exists(local_destdir):
@@ -595,7 +670,8 @@ class AutoCreds(Eucarc):
             if not overwrite:
                 raise ValueError('local_destdir exists. set "overwrite=True" to write over '
                                  'existing contents: {0}'.format(local_destdir))
-        local_destdir = os.path.abspath(local_destdir)
+        if local_destdir is not None:
+            local_destdir = os.path.abspath(local_destdir)
         for key, path in self.get_eucarc_attrs().iteritems():
             if not key.startswith('_') and re.search(sftp_prefix, str(path)):
                 urlp = urlparse(path)
@@ -603,11 +679,18 @@ class AutoCreds(Eucarc):
                     raise ValueError('sftp uri hostname:{0} does not match current Machines:{1}'
                                      .format(urlp.hostname, machine.hostname))
                 artifact_name = os.path.basename(urlp.path)
-                localpath = os.path.join(local_destdir, artifact_name)
-                machine.sftp.get(remotepath=urlp.path, localpath=localpath)
+                if local_destdir is not None:
+                    localpath = os.path.join(local_destdir, artifact_name)
+                    machine.sftp.get(remotepath=urlp.path, localpath=localpath)
+                    self.log.debug('Wrote: {0} to local:{1}'.format(key, localpath))
+                elif zip_file:
+                    with machine.sftp.open(urlp.path) as remote_file:
+                        data = remote_file.read(maxlen)
+                    zip_file.writestr(artifact_name, data)
+                    self.log.debug('Wrote: {0} to zipfile object'.format(key))
+                filepaths.append(localpath)
                 setattr(self, key, localpath)
-                self.log.debug('Wrote: {0} to local:{1}'.format(key, localpath))
-        return local_destdir
+        return filepaths
 
     # Todo Clean up the legacy methods below...
 
