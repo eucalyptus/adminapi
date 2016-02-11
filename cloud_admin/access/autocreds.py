@@ -606,6 +606,7 @@ class AutoCreds(Eucarc):
             eucarc = ""
 
             eucarc += keydir + "\n"
+            eucarc += 'export EUCALYPTUS_CERT="${EUCA_KEY_DIR}/cloud-cert.pem";\n'
             for key, value in self.get_eucarc_attrs().iteritems():
                 if isinstance(value, basestring) and not re.search('^sftp://', value):
                     eucarc += 'export {0}="{1}";\n'.format(str(key).upper(), value)
@@ -627,6 +628,7 @@ class AutoCreds(Eucarc):
             with open(eucarc_path, 'w') as eucarc:
                 eucarc.seek(0)
                 eucarc.write(keydir + "\n")
+                eucarc.write('export EUCALYPTUS_CERT="${EUCA_KEY_DIR}/cloud-cert.pem";\n')
                 for key, value in self.get_eucarc_attrs().iteritems():
                     if isinstance(value, basestring) and not re.search('^sftp://', value):
                         eucarc.write('export {0}="{1}";\n'.format(str(key).upper(), value))
