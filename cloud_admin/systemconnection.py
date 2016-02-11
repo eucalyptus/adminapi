@@ -1,13 +1,16 @@
 
+import array
 import copy
 import logging
 from prettytable import PrettyTable
 import re
+import socket
+import struct
+import fcntl
 import threading
 from cloud_admin.access.autocreds import AutoCreds
 from cloud_admin.services.serviceconnection import ServiceConnection
 from cloud_admin.hosts.eucahost import EucaHost
-from cloud_admin.services.node_service import EucaNodeService
 from cloud_utils.system_utils.machine import Machine
 from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_utils.log_utils import markup, get_traceback
@@ -92,9 +95,14 @@ class SystemConnection(ServiceConnection):
     @property
     def clc_machine(self):
         if not self._clc_machine:
-            if self.machine_connect_kwargs['hostname']:
-                if self.eucahosts[self.machine_connect_kwargs['hostname']]:
-                    self._clc_machine = self.eucahosts[self.machine_connect_kwargs['hostname']]
+            hostname = self.machine_connect_kwargs['hostname']
+            if hostname:
+                #  See if a host exists matching the provided hostname
+                if hostname in self.eucahosts:
+                    self._clc_machine = self.eucahosts[hostname]
+                #  See if this is a localhost connection
+                elif self._get_clc_eucahost_for_localhost():
+                    self._clc_machine = self._get_clc_eucahost_for_localhost()
                 else:
                     self._clc_machine = Machine(**self.machine_connect_kwargs)
                     self.eucahosts[self.machine_connect_kwargs['hostname']] = self._clc_machine
@@ -105,6 +113,33 @@ class SystemConnection(ServiceConnection):
         if not self._eucahosts:
             self._eucahosts = self._update_host_list()
         return self._eucahosts
+
+    def _get_clc_eucahost_for_localhost(self):
+        ifaces = self._get_all_local_ip_interfaces()
+        for iface, ip in ifaces:
+            if ip in self.eucahosts:
+                self.log.debug('CLC is bound to iface:{0} ip:{1}'.format(iface, ip))
+                return self.eucahosts[ip]
+        return None
+
+    def _get_all_local_ip_interfaces(self):
+        max_possible = 1028
+        bytes = max_possible * 32
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        names = array.array('B', '\0' * bytes)
+        outbytes = struct.unpack('iL', fcntl.ioctl(
+            s.fileno(),
+            0x8912,  # SIOCGIFCONF
+            struct.pack('iL', bytes, names.buffer_info()[0])
+        ))[0]
+        namestr = names.tostring()
+        interfaces = []
+        for i in range(0, outbytes, 40):
+            name = namestr[i:i+16].split('\0', 1)[0]
+            addr   = namestr[i+20:i+24]
+            ip = "{0}.{1}.{2}.{3}".format(ord(addr[0]), ord(addr[1]), ord(addr[2]), ord(addr[3]))
+            interfaces.append((name, ip))
+        return interfaces
 
     def _update_host_list(self):
         machines = self.get_all_machine_mappings()
