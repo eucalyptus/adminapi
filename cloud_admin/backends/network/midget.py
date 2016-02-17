@@ -1293,28 +1293,50 @@ class Midget(object):
         if hosts and not isinstance(hosts, list):
             assert isinstance(hosts, Host)
             hosts = [hosts]
+        result = {}
+        failed = False
         if hosts is None:
             hosts = self.mapi.get_hosts(query=None) or []
         self.info('Attetmpting to stop all hosts first...')
         self.info('Restarting hosts: {0}'.format(",".join(str(x.get_name()) for x in hosts)))
         for status in ['stop', 'start']:
             for host in hosts:
-                ip = self.get_ip_for_host(host)
-                euca_host = self.eucaconnection.get_host_by_hostname(ip)
-                # username = self.clc_connect_kwargs.get('username', 'root')
-                # password = self.clc_connect_kwargs.get('password')
-                # keypath = self.clc_connect_kwargs.get('keypath')
-                # ssh = SshConnection(host=ip, username=username,
-                #                     password=password, keypath=keypath)
-                ssh = euca_host.ssh
-                self.info("Attempting to {0} host:{1} ({2})".format(status, host.get_name(), ip))
-                ssh.sys('service midolman {0}'.format(status), code=0)
-                time.sleep(1)
-        self.info('Done restarting midolman on hosts')
+                try:
+                    success = True
+                    error = None
+                    ip = self.get_ip_for_host(host)
+                    euca_host = self.eucaconnection.get_host_by_hostname(ip)
+                    # username = self.clc_connect_kwargs.get('username', 'root')
+                    # password = self.clc_connect_kwargs.get('password')
+                    # keypath = self.clc_connect_kwargs.get('keypath')
+                    # ssh = SshConnection(host=ip, username=username,
+                    #                     password=password, keypath=keypath)
+                    ssh = euca_host.ssh
+                    self.info("Attempting to {0} host:{1} ({2})".format(status,
+                                                                        host.get_name(), ip))
+                    ssh.sys('service midolman {0}'.format(status), code=0)
+                    time.sleep(1)
+                except Exception as SE:
+                    failed = True
+                    success = False
+                    error = str(SE)
+                    self.log.warning('{0}, midolman service failed to:{1}. Err:"{2}"'
+                                     .format(host.get_name(), status, str(SE)))
+                result[host.get_name()] = {'action': status, 'success':success, 'error': error}
+
+        if failed:
+            errors = 'Errors while reseting midolman on hosts:\n'
+            for host, info in result.iteritems():
+                if info.get('success') is False:
+                    errors += "host:{0}, action:{1}, success:{1}, error:{3}\n"\
+                        .format(host, info.get('action'), info.get('success'), info.get('error'))
+            self.log.warning(errors)
+        else:
+            self.info('Done restarting midolman on hosts')
+        return result
 
     def show_host_ports(self, host, printme=True):
-        '''
-        Fetches the 'HostInterfacePort's from a specific host and presents them in a formatted
+f        Fetches the 'HostInterfacePort's from a specific host and presents them in a formatted
         table
         '''
         assert isinstance(host, Host)

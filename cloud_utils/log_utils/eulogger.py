@@ -196,6 +196,13 @@ class Eulogger(logging.Logger):
             return level
         return default
 
+    def close(self):
+        for handler in self.handlers:
+            try:
+                handler.close()
+            except Exception as CE:
+                self.log.warning('Could not close log handler, err:"{0}"'.format(CE))
+
 
 class AllowLoggerByName(logging.Filter):
     """
