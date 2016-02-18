@@ -918,7 +918,7 @@ class ServiceConnection(AWSQueryConnection):
         :return: EucaNode obj
         :raise EucaNotFoundException:
         """
-        if not (name and fullname and partition):
+        if not (name or fullname):
             raise ValueError('No filters provided. name="{0}", fullname="{1}", partition="{2}"'
                              .format(name, fullname, partition))
         nodes = self.get_all_node_controller_services(

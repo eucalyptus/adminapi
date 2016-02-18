@@ -606,10 +606,10 @@ class AutoCreds(Eucarc):
             eucarc = ""
 
             eucarc += keydir + "\n"
-            eucarc += 'export EUCALYPTUS_CERT="${EUCA_KEY_DIR}/cloud-cert.pem";\n'
+            eucarc += 'export EUCALYPTUS_CERT="${EUCA_KEY_DIR}/cloud-cert.pem"\n'
             for key, value in self.get_eucarc_attrs().iteritems():
                 if isinstance(value, basestring) and not re.search('^sftp://', value):
-                    eucarc += 'export {0}="{1}";\n'.format(str(key).upper(), value)
+                    eucarc += 'export {0}="{1}"\n'.format(str(key).upper(), value)
             zip_file.writestr('eucarc', eucarc)
             zip_file.close()
             filepaths.append(zipfilename)
@@ -628,10 +628,10 @@ class AutoCreds(Eucarc):
             with open(eucarc_path, 'w') as eucarc:
                 eucarc.seek(0)
                 eucarc.write(keydir + "\n")
-                eucarc.write('export EUCALYPTUS_CERT="${EUCA_KEY_DIR}/cloud-cert.pem";\n')
+                eucarc.write('export EUCALYPTUS_CERT="${EUCA_KEY_DIR}/cloud-cert.pem"\n')
                 for key, value in self.get_eucarc_attrs().iteritems():
                     if isinstance(value, basestring) and not re.search('^sftp://', value):
-                        eucarc.write('export {0}="{1}";\n'.format(str(key).upper(), value))
+                        eucarc.write('export {0}="{1}"\n'.format(str(key).upper(), value))
                 eucarc.flush()
             self.log.debug('Finished creating new local creds at: {0}'.format(local_destdir))
             self._local_files = filepaths
