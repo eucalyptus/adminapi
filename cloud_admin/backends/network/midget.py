@@ -20,6 +20,7 @@ from prettytable import PrettyTable
 from json import loads as json_loads
 import requests
 import socket
+import struct
 import time
 import re
 import copy
@@ -1237,8 +1238,9 @@ class Midget(object):
             hosts = [hosts]
         if hosts is None:
             hosts = self.mapi.get_hosts(query=None)
-        pt = PrettyTable(["HOST ID", 'HOST NAME', "ALIVE", "HOST IP(S)"])
-        for host in hosts:
+        host_name_col = 'HOST NAME'
+        pt = PrettyTable(["HOST ID", host_name_col, "ALIVE", "HOST IP(S)"])
+        for host in sorted(hosts, key=lambda host: host.get_name()):
             ip_addrs = 'not resolved'
             try:
                 name, aliaslist, addresslist = socket.gethostbyaddr(host.get_name())
@@ -1258,7 +1260,7 @@ class Midget(object):
         if hosts is None:
             hosts = self.mapi.get_hosts(query=None)
         buf = "\n"
-        for host in hosts:
+        for host in sorted(hosts, key=lambda host: host.get_name()):
             title = self._bold("HOST:{0} ({1})".format(host.get_name(), host.get_id()), 94)
             pt = PrettyTable([title])
             pt.align[title] = "l"
@@ -1336,7 +1338,8 @@ class Midget(object):
         return result
 
     def show_host_ports(self, host, printme=True):
-f        Fetches the 'HostInterfacePort's from a specific host and presents them in a formatted
+        '''
+        Fetches the 'HostInterfacePort's from a specific host and presents them in a formatted
         table
         '''
         assert isinstance(host, Host)
