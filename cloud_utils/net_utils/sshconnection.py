@@ -353,25 +353,38 @@ class SshConnection():
             key_files = key_files.split(',')
 
         # Make sure there is at least one likely way to authenticate...
-        ssh = paramiko.SSHClient()
+        print 'PRoxy connect using password:{0} username:{1}'.format(proxy_password, proxy_username)
         if ((proxy_username is not None) and
                 (key_files or self.find_keys or
                  proxy_keypath is not None or
                  proxy_password is not None)):
             p_transport = paramiko.Transport(proxy_host)
-            ssh._transport = p_transport
             p_transport.start_client()
             if proxy_keypath:
                 priv_key = paramiko.RSAKey.from_private_key_file(proxy_keypath)
                 p_transport.auth_publickey(proxy_username, priv_key)
             elif proxy_password:
                 p_transport.auth_password(proxy_username, proxy_password)
-            elif self.find_keys:
-                self.debug("Proxy auth -Using local keys, no keypath/password provided",
-                           verbose=verbose)
-                ssh._auth(proxy_username, None, None, key_files, True, True)
+            else:
+                host, port = proxy_host
+                #p_transport = paramiko.Transport(proxy_host)
+                ssh = paramiko.SSHClient()
+                ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                print 'Attempting ssh transport connect: {0}'.format(proxy_host)
+                ssh.connect(hostname=host, username=proxy_username, port=port)
+                #ssh._transport = p_transport
+                #self.debug("Proxy auth -Using local keys, no keypath/password provided",
+                #           verbose=verbose)
+                #ssh._auth(proxy_username, None, None, key_files, True, True)
+                #ssh._auth(username=proxy_username, password=proxy_password, pkey=proxy_keypath,
+                #          key_filenames=key_files, allow_agent=True, look_for_keys=True,
+                #          gss_auth=True, gss_kex=True, gss_deleg_creds=True, gss_host=True)
+                print 'done with connect'
                 p_transport = ssh._transport
+
+                #p_transport.connect(username=proxy_username)
             # forward from 127.0.0.1:<free_random_port> to |dest_host|
+
             channel = p_transport.open_channel('direct-tcpip', dest_host, ('127.0.0.1', 0))
             return paramiko.Transport(channel)
         else:

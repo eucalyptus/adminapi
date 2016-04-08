@@ -83,8 +83,11 @@ cad.show_storage_controllers()
 
 import copy
 import errno
+import json
 import os
 import re
+import socket
+import struct
 import time
 from prettytable import PrettyTable
 from urlparse import urlparse
@@ -1189,6 +1192,24 @@ class ServiceConnection(AWSQueryConnection):
         """
         return SHOW_PROPERTIES_NARROW(self, *args, **kwargs)
 
+    def get_cloud_network_config_json(self, property_name='cloud.network.network_configuration'):
+        net_prop = self.get_property(property=property_name)
+        return json.loads(net_prop.value)
+
+    def modify_cloud_network_config_json(self, net_dict,
+                                         property_name='cloud.network.network_configuration'):
+        net_prop = self.get_property(property=property_name)
+        last_value = net_prop.value
+        if isinstance(net_dict, dict):
+            net_dict = json.dumps(net_dict, format=2)
+        if not isinstance(net_dict, basestring):
+            raise ValueError('modify_cloud_network_config_json: net_dict not string or json')
+        self.modify_property(net_prop, net_dict)
+
+
+
+
+
     ###############################################################################################
     #                           Cloud Service Cert Methods (ie: cloud-cert.pem)                   #
     ###############################################################################################
@@ -1267,6 +1288,9 @@ class ServiceConnection(AWSQueryConnection):
         if not isinstance(machines, dict):
             raise ValueError('show_machine_mappings requires dict example: {"host ip":[services]}, '
                              'got:"{0}/{1}"'.format(machines, type(machines)))
+        # Create key to sort ip lists
+        ipre = re.compile("\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}")
+        key = lambda ip: struct.unpack("!L", socket.inet_aton(ipre.search(ip).group()))[0]
         # To format the tables services, print them all at once and then sort the table
         # rows string into the machines columns
         for machine, services in machines.iteritems():
@@ -1322,7 +1346,7 @@ class ServiceConnection(AWSQueryConnection):
                                           markup(machine, [1, 4, 94])),
                         servbuf])
         if print_table:
-            print_method("\n{0}\n".format(pt.get_string(sortby=pt.field_names[1])))
+            print_method("\n{0}\n".format(pt.get_string(sortby=pt.field_names[0], key=key)))
         else:
             return pt
 

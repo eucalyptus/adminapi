@@ -2,7 +2,7 @@
 
 from setuptools import setup, find_packages
 
-__version__ = '0.14'
+__version__ = '0.15'
 
 setup(name="adminapi",
       version=__version__,

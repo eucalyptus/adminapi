@@ -133,7 +133,7 @@ def ping(address, poll_count=10, interval=2, logger=None):
                 debug('sleeping for {0} seconds'.format(interval))
                 time.sleep(interval)
             try:
-                local("ping -c 1 " + address)
+                local("ping -c 1 " + address, print_method=critical)
                 debug("Was able to ping address")
                 return True
             except subprocess.CalledProcessError as CPE:

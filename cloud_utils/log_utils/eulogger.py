@@ -88,14 +88,16 @@ class Eulogger(logging.Logger):
             print ('-----------------------------------------------\n'
                    'parent_logger_name:{0}\neulogger init:\nidentifier:{1}\nstdout_level:{2}\n'
                    'stdout_format:{3}\nlogfile:{4}\nlogfile_level:{5}\nfile_format:{6}\n'
-                   'clear_file:{7}\n-----------------------------------------------'
-                   .format(str(parent_logger_name), str(identifier), str(stdout_level),
-                           str(stdout_format), str(logfile), str(logfile_level), str(file_format)))
+                   '\n-----------------------------------------------'
+                   .format(parent_logger_name, identifier, stdout_level, stdout_format, logfile,
+                           logfile_level, file_format))
         # Create or fetch existing logger of name 'logger_name
         if isinstance(stdout_level, basestring):
             self.stdout_level = getattr(logging, stdout_level.upper(), logging.DEBUG)
+        elif isinstance(stdout_level, int):
+            self.stdout_level = stdout_level
         else:
-            self.stdout_level = stdout_level or logging.DEBUG
+            self.stdout_level = logging.DEBUG
         if isinstance(logfile_level, basestring):
             self.logfile_level = getattr(logging, logfile_level.upper(), logging.DEBUG)
         else:

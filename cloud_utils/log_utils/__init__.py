@@ -144,34 +144,68 @@ def _standardize_markups(markups):
                 newmarkups.append(markup)
     return newmarkups
 
-def red(message, bold=False, markups=[]):
-    markups.append(ForegroundColor.RED)
+def red(message, bold=False, underline=False):
+    markups = ForegroundColor.RED
     if bold:
         markups.append(TextStyle.BOLD)
+    if underline:
+        markups.append(TextStyle.UNDERLINE)
     return markup(message, markups=markups)
 
-def green(message, bold=False):
+def white(message, bold=False, underline=False):
+    markups = ForegroundColor.WHITE
+    if bold:
+        markups.append(TextStyle.BOLD)
+    if underline:
+        markups.append(TextStyle.UNDERLINE)
+    return markup(message, markups=markups)
+
+def black(message, bold=False, underline=False):
+    markups = ForegroundColor.BLACK
+    if bold:
+        markups.append(TextStyle.BOLD)
+    if underline:
+        markups.append(TextStyle.UNDERLINE)
+    return markup(message, markups=markups)
+
+def magenta(message, bold=False, underline=False):
+    markups = ForegroundColor.MAGENTA
+    if bold:
+        markups.append(TextStyle.BOLD)
+    if underline:
+        markups.append(TextStyle.UNDERLINE)
+    return markup(message, markups=markups)
+
+def green(message, bold=False, underline=False):
     markups = [ForegroundColor.GREEN]
     if bold:
         markups.append(TextStyle.BOLD)
+    if underline:
+        markups.append(TextStyle.UNDERLINE)
     return markup(message, markups=markups)
 
-def yellow(message, bold=False):
+def yellow(message, bold=False, underline=False):
     markups = [ForegroundColor.YELLOW]
     if bold:
         markups.append(TextStyle.BOLD)
+    if underline:
+        markups.append(TextStyle.UNDERLINE)
     return markup(message, markups=markups)
 
-def blue(message, bold=False):
+def blue(message, bold=False, underline=False):
     markups = [ForegroundColor.BLUE]
     if bold:
         markups.append(TextStyle.BOLD)
+    if underline:
+        markups.append(TextStyle.UNDERLINE)
     return markup(message, markups=markups)
 
-def cyan(message, bold=False):
+def cyan(message, bold=False, underline=False):
     markups = [ForegroundColor.CYAN]
     if bold:
         markups.append(TextStyle.BOLD)
+    if underline:
+        markups.append(TextStyle.UNDERLINE)
     return markup(message, markups=markups)
 
 def _ascii_markups_to_html_tags(markups, open_bracket="<", close_bracket=">"):

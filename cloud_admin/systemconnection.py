@@ -311,7 +311,14 @@ class SystemConnection(ServiceConnection):
                              .format(eucahosts, type(eucahosts)))
         # To format the tables services, print them all at once and then sort the table
         # rows string into the machines columns
-        for hostip, host in eucahosts.iteritems():
+        try:
+            sorted_ips = sorted(list(eucahosts),
+                key=lambda ip: struct.unpack("!L", socket.inet_aton(ip))[0])
+        except Exception as SE:
+            self.log.warning('"Failed to sort host list by IP, error:"{0}"'.format(SE))
+            sorted_ips = sorted(list(eucahosts))
+        for hostip in sorted_ips:
+            host = eucahosts[hostip]
             for serv in host.services:
                 if update:
                     serv.update()
