@@ -140,7 +140,7 @@ class RemoteCommands(object):
             result = self.results.get(host)
             output = ""
             for line in result.get('output'):
-                output += "\n".join((line[0+i:max+i] for i in range(0, len(line), max)))
+                output += str("{0}\n".format(line))
             status = result.get('status')
             if status == 0:
                 color = green
