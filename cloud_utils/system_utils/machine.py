@@ -597,8 +597,37 @@ class Machine(object):
                 self.debug(str(item) + " = " + str(out[item]))
         return out
 
-    def get_network_ipv4_info(self, search_name=None, verbose=False):
+    def get_hostnames(self, cache_interval=60):
+        """
+        Attempts to fetch ip/hostname info (primarily used to identify this machine)
+        :return: set of strings
+        """
+        hostnames = set([])
+        if self.hostname:
+            hostnames.add(self.hostname)
+        try:
+            out = self.sys('hostname', code=0)
+            if out:
+                hostnames.add(out[0])
+        except Exception as E:
+            self.log.warning('Error fetching hostname from machine:"{0}"'.format(E))
+        try:
+            ipv4_dict = self.get_network_ipv4_info(cache_interval=cache_interval).iteritems()
+            for iface, info in ipv4_dict:
+                ip = info.get('ip', None)
+                if ip:
+                    hostnames.add(ip)
+        except Exception as HE:
+            self.log.warning('Error parsing ip info for hostnames:"{0}"'.format(HE))
+        return hostnames
+
+
+    def get_network_ipv4_info(self, search_name=None, cache_interval=60, verbose=False):
         interfaces = {}
+        if cache_interval:
+            interfaces = getattr(self, '_network_ipv4_info', {})
+            if interfaces and (time.time() - interfaces.get('timestamp', 0) <= cache_interval):
+                return interfaces.get('ipv4_info')
         out = self.sys('ip -o -f inet  addr', code=0, verbose=verbose)
         assert isinstance(out, list)
         for line in out:
@@ -630,6 +659,8 @@ class Machine(object):
                     info_dict['scope'] = info[offset]
                 offset += 1
             interfaces[iface] = info_dict
+        cache_dict = {'timestamp': time.time(), 'ipv4_info': interfaces}
+        setattr(self, '_network_ipv4_info', cache_dict)
         return interfaces
 
     def show_network_ipv4_info(self, search_name=None, info_dict=None, printmethod=None,
