@@ -11,6 +11,9 @@ from Queue import Queue, Empty
 from prettytable import PrettyTable
 
 class RemoteCommands(object):
+    """
+    Utility to run commands on remote machines via ssh in batches.
+    """
     
     def __init__(self, hostfile=None, ips=None, password=None, username='root',
                  command='echo "ALIVE', timeout=5, thread_count=20, log_level='debug'):
@@ -60,8 +63,6 @@ class RemoteCommands(object):
             q.task_done()
             self.logger.error('{0}\nError in do_ssh:{0}'.format(get_traceback(), SE))
 
-
-
     def _do_ssh(self, q, lock, name, command):
         empty = False
         while not empty:
@@ -106,19 +107,17 @@ class RemoteCommands(object):
                 logger.debug('Closed ssh to host: {0}'.format(host))
         self.logger.debug('{0}: Done with thread'.format(name))
 
-    def run_remote_commands(self, ips=None, store_result=False):
+    def run_remote_commands(self, ips=None, printme=True):
         iq = Queue()
-        result_dict = {}
         ips = ips or self.ips
         if not ips:
             raise ValueError('run_remote_commands: IP list was empty:"{0}"'.format(ips))
         for ip in ips:
             ip = str(ip).strip().rstrip()
-            if store_result:
-                result_dict[ip] = {}
             iq.put(ip)
         tlock = Lock()
         threadcount = self.args.thread_count or 1
+        self.results = {}
         for i in range(threadcount):
              t = Thread(target=self.do_ssh, args=(iq, tlock, i, self.command))
              t.daemon = True
@@ -127,13 +126,17 @@ class RemoteCommands(object):
         iq.join()
         self.logger.debug('Done with join')
         time.sleep(self.maxwait + .1)
+        return self.results
+
+    def show_results(self, results=None, printmethod=None):
+        results = results or self.results
         pt = PrettyTable(['HOST', 'RES', 'TIME', 'OUTPUT'])
         pt.align = 'l'
         pt.hrules = 1
         pt.padding_width = 0
         max = 80
         pt.max_width['OUTPUT'] = max
-        for host in sorted(self.results, key=lambda ip: struct.unpack("!L", inet_aton(ip))[0]):
+        for host in sorted(results, key=lambda ip: struct.unpack("!L", inet_aton(ip))[0]):
             result = self.results.get(host)
             output = ""
             for line in result.get('output'):
@@ -145,9 +148,15 @@ class RemoteCommands(object):
                 color = red
             pt.add_row([blue(host), color(result.get('status')), color(result.get('elapsed')),
                         color(output)])
-        print "\n{0}\n".format(pt)
+        buf = "\n{0}\n".format(pt)
+        if printmethod:
+            printmethod(buf)
+        else:
+            print buf
+
 
 if __name__ == "__main__":
     rm = RemoteCommands()
     rm.run_remote_commands()
+    rm.show_results()
 
