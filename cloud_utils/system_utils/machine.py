@@ -597,6 +597,60 @@ class Machine(object):
                 self.debug(str(item) + " = " + str(out[item]))
         return out
 
+    def get_network_ipv4_info(self, search_name=None, verbose=False):
+        interfaces = {}
+        out = self.sys('ip -o -f inet  addr', code=0, verbose=verbose)
+        assert isinstance(out, list)
+        for line in out:
+            if search_name and not re.search(search_name, line):
+                continue
+            info = line.split()
+            num = info[0]
+            iface = info[1]
+            info = info[2:]
+            info_len = len(info)
+            offset = 0
+            info_dict = {}
+            info_dict['ip'] = None
+            info_dict['mask'] = None
+            info_dict['ipcidr'] = None
+            info_dict['broadcast'] = None
+            info_dict['scope'] = None
+            while offset < info_len:
+                word = info[offset]
+                if word == 'inet':
+                    offset += 1
+                    info_dict['ipcidr'] = info[offset]
+                    info_dict['ip'], info_dict['mask'] = info_dict['ipcidr'].split('/')
+                if word == 'brd':
+                    offset += 1
+                    info_dict['broadcast'] = info[offset]
+                if word == 'scope':
+                    offset += 1
+                    info_dict['scope'] = info[offset]
+                offset += 1
+            interfaces[iface] = info_dict
+        return interfaces
+
+    def show_network_ipv4_info(self, search_name=None, info_dict=None, printmethod=None,
+                               printme=True):
+        if search_name and info_dict:
+            self.log.warning('show_network_ipv4_info method only supports '
+                             'search_name or info_dict, not both')
+        info_dict = info_dict or self.get_network_ipv4_info(search_name=search_name)
+
+        header = ['INTERFACE', 'CIDR', 'IP', 'MASK', 'BROADCAST', 'SCOPE']
+        pt = PrettyTable(header)
+        pt.align = 'l'
+        for iface, info in info_dict.iteritems():
+            pt.add_row([iface, info['ipcidr'], info['ip'], info['mask'], info['broadcast'],
+                        info['scope']])
+        if not printme:
+            return pt
+        printmethod = printmethod or self.log.info
+        printmethod("\n{0}\n".format(pt))
+
+
     def get_network_interfaces(self, search_name=None, verbose=False):
         interfaces = {}
         time_stamp = int(time.time())
