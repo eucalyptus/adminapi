@@ -327,13 +327,18 @@ class IPHdr(object):
         self.src_addr = None
         self.dst_addr = None
         if packet is not None:
-            self.parse_ip_hdr(packet)
+            try:
+                self.parse_ip_hdr(packet)
+            except Exception as E:
+                debug('Erroing parsing ip header:"{0}"'.format(E))
 
     def parse_ip_hdr(self, packet):
         """
         Used to parse and populate attributes of the ip header
         :param packet: Packet should be raw bytes read from socket, etc..
         """
+        if len(packet) < 20:
+            raise ValueError('Invalid packet. Length < 20. Pkt:"{0}"'.format(packet))
         ip_header = packet[0: 20]
         iph = struct.unpack('!BBHHHBBH4s4s', ip_header)
         version_ihl = iph[0]

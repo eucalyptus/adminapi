@@ -61,6 +61,8 @@ class Eucarc(object):
         self.ec2_secret_key = None
         self.eucalyptus_cert = None
         self.eustore_url = 'http://emis.eucalyptus.com/'
+        self._bootstrap_url = None
+        self._properties_url = None
 
         self.s3_url = None
         self.token_url = None
@@ -198,6 +200,14 @@ class Eucarc(object):
     def aws_iam_url(self, url):
         self._iam_url = url
 
+    @property
+    def euare_url(self):
+        return self._iam_url
+
+    @euare_url.setter
+    def euare_url(self, url):
+        self._iam_url = url
+
 
     # Cloud Formation
     @property
@@ -266,7 +276,6 @@ class Eucarc(object):
     @simpleworkflow_url.setter
     def simpleworkflow_url(self, url):
         self._simpleworkflow_url = url
-
 
 
     ##############################################################################################
@@ -412,6 +421,41 @@ class Eucarc(object):
     @aws_secret_access_key.setter
     def aws_secret_access_key(self, value):
         self._secret_key = value
+
+    ##############################################################################################
+    # Euca Specific
+    ##############################################################################################
+    @property
+    def euca_bootstrap_url(self):
+        return self._bootstrap_url
+
+    @euca_bootstrap_url.setter
+    def euca_bootstrap_url(self, value):
+        self._bootstrap_url = value
+
+    @property
+    def bootstrap_url(self):
+        return self._bootstrap_url
+
+    @bootstrap_url.setter
+    def bootstrap_url(self, value):
+        self._bootstrap_url = value
+
+    @property
+    def euca_properties_url(self):
+        return self._properties_url
+
+    @euca_properties_url.setter
+    def euca_properties_url(self, value):
+        self._properties_url = value
+
+    @property
+    def properties_url(self):
+        return self._properties_url
+
+    @properties_url.setter
+    def properties_url(self, value):
+        self._properties_url = value
 
     # Hold these values as properties so the dict only returns cred info, not obj info...
     @property

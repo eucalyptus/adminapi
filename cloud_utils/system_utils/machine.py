@@ -623,11 +623,11 @@ class Machine(object):
 
 
     def get_network_ipv4_info(self, search_name=None, cache_interval=60, verbose=False):
-        interfaces = {}
         if cache_interval:
-            interfaces = getattr(self, '_network_ipv4_info', {})
+            interfaces = getattr(self, '_network_ipv4_info', {}) or {}
             if interfaces and (time.time() - interfaces.get('timestamp', 0) <= cache_interval):
                 return interfaces.get('ipv4_info')
+        interfaces = {}
         out = self.sys('ip -o -f inet  addr', code=0, verbose=verbose)
         assert isinstance(out, list)
         for line in out:

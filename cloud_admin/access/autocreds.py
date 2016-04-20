@@ -141,6 +141,36 @@ eucarc_to_service_map = {
     "aws_simpleworkflow_url": 'simpleworkflow',
     "aws_auto_scaling_url": 'autoscaling'}
 
+class ServiceMapping(object):
+    """
+    Maps the different names for a given service for both cloud internals and client tools
+    """
+    def __init__(self, aws_name, euca_service, eucarc, euca2ools):
+        self.aws_name = aws_name
+        self.euca_service = euca_service
+        self.eucarc = eucarc
+        self.euca2ools = euca2ools
+
+    def __repr__(self):
+        return "{0}:{1}:".format(self.__class__.__name__, self.aws_name, self.euca_service)
+
+aws_to_euca_service_map = {
+    "ec2": ServiceMapping("ec2", "compute", 'ec2_url', 'ec2-url'),
+    "iam": ServiceMapping("iam", "euare", 'euare_url', 'iam-url'),
+    "bootstrap": ServiceMapping('bootstrap', "bootstrap", 'bootstrap_url', 'bootstrap-url'),
+    "elasticloadbalancing": ServiceMapping('elasticloadbalancing', "loadbalancing", 'aws_elb_url',
+                                           'elasticloadbalancing-url'),
+    "cloudformation": ServiceMapping('cloudformation', "cloudformation", 'aws_cloudformation_url',
+                                     'cloudformation-url'),
+    "autoscaling": ServiceMapping("autoscaling", "autoscaling", 'aws_auto_scaling_url',
+                                  'autoscaling-url'),
+    "s3": ServiceMapping("s3", "objectstorage", "s3_url", 's3-url'),
+    "monitoring": ServiceMapping('monitoring', "cloudwatch", 'aws_cloudwatch_url',
+                                 'monitoring-url'),
+    "sts": ServiceMapping("sts", "tokens", 'token_url', 'sts-url'),
+    "reporting": ServiceMapping("reporting", 'reporting', 'reporting_url', 'reporting-url')
+}
+
 
 class AutoCreds(Eucarc):
     def __init__(self,
@@ -148,6 +178,9 @@ class AutoCreds(Eucarc):
                  aws_access_key=None,
                  aws_secret_key=None,
                  aws_account_name=None,
+                 region_domain=None,
+                 service_port=8773,
+                 https=False,
                  aws_user_name=None,
                  machine=None,
                  hostname=None,
@@ -171,6 +204,7 @@ class AutoCreds(Eucarc):
         self._local_files = None
         self._serviceconnection = service_connection
         self._clc_ip = hostname
+        # Todo implement building creds from a passed string buffer
         self._string = string
         self._keysdir = keysdir
         self._machine = machine
@@ -180,6 +214,9 @@ class AutoCreds(Eucarc):
         self._has_existing_cert = existing_certs
         self.aws_secret_key = aws_secret_key
         self.aws_access_key = aws_access_key
+        self._region_domain = region_domain
+        self._service_port = service_port
+        self._https = https
         self._has_updated_connect_args = False  # used to speed up auto find credentials
         if (username != 'root' or proxy_username != 'root' or password or keypath or
                 proxy_hostname or proxy_keypath or proxy_password):
@@ -200,6 +237,49 @@ class AutoCreds(Eucarc):
             self.__dict__.update(eucarc_obj.__dict__)
         if not (self.aws_access_key and self.aws_secret_key) and auto_create:
             self.auto_find_credentials()
+
+    @property
+    def is_https(self):
+        return self._https
+
+    @is_https.setter
+    def is_https(self, value):
+        assert isinstance(value, bool), 'is_https must be of type bool, got:{0}/{1}'\
+            .format(value, type(value))
+        if value != self.is_https:
+            self._https = value
+            self.update_attrs_from_cloud_services()
+
+
+    @property
+    def region_domain(self):
+        if not self._region_domain and self.serviceconnection:
+            domain_prop = self.serviceconnection.get_property('system.dns.dnsdomain')
+            domain = domain_prop.value
+            if domain:
+                self._region_domain = domain
+        return self._region_domain
+
+    @region_domain.setter
+    def region_domain(self, domain):
+        if domain != self.region_domain:
+            self._region_domain = domain
+            self.update_attrs_from_cloud_services()
+
+    @property
+    def service_port(self):
+        if not self._service_port and self.serviceconnection:
+            port_prop = self.serviceconnection.get_property('bootstrap.webservices.port')
+            port = port_prop.value
+            if port:
+                self._service_port = port
+        return self._service_port
+
+    @service_port.setter
+    def service_port(self, port):
+        if port != self.service_port:
+            self._service_port = port
+            self.update_attrs_from_cloud_services()
 
     @property
     def creds_machine(self):
@@ -241,11 +321,16 @@ class AutoCreds(Eucarc):
         gathered via the Eucalyptus admin api interface
         :returns dict mapping eucarc common key-values to the discovered service URIs.
         """
-        if not self.serviceconnection:
-            raise RuntimeError('Can not fetch service paths from cloud without an '
-                               'ServiceConnection\n This requires: clc_ip, aws_access_key, '
-                               'aws_secret_key')
-        path_dict = self._get_service_paths_from_serviceconnection(self.serviceconnection)
+        if not self.serviceconnection and not self.region_domain:
+            raise RuntimeError('Can not fetch service paths from cloud without a "region_domain"'
+                               'and/or a ServiceConnection\n A ServiceConnection requires: '
+                               'clc_ip, or aws_access_key + aws_secret_key and bootstrap endpoint')
+        if self.region_domain:
+            path_dict = self._get_service_paths_from_domain(domain=self.region_domain,
+                                                            port=self.service_port,
+                                                            secure=self.is_https)
+        else:
+            path_dict = self._get_service_paths_from_serviceconnection(self.serviceconnection)
         if not path_dict.get('ec2_access_key'):
             path_dict['ec2_access_key'] = self.aws_access_key
         if not path_dict.get('ec2_secret_key'):
@@ -257,7 +342,24 @@ class AutoCreds(Eucarc):
         return path_dict
 
     @classmethod
-    def _get_service_paths_from_serviceconnection(cls, serviceconnection):
+    def _get_service_paths_from_domain(cls, domain, port=8773, secure=False):
+        ret_dict = {}
+        for service_prefix, mapping in aws_to_euca_service_map.iteritems():
+            # http://monitoring.h-12.autoqa.qa1.eucalyptus-systems.com:8773/
+            if secure:
+                url = "http://"
+            else:
+                url = "https://"
+            if port:
+                str_port = ":" + str(port)
+            else:
+                str_port = ""
+            url = "{0}{1}.{2}{3}/".format(url, service_prefix, domain, str_port)
+            ret_dict[mapping.eucarc] = url
+        return ret_dict
+
+    @classmethod
+    def _get_service_paths_from_serviceconnection(cls, serviceconnection, secure=False):
         """
         Reads the Eucalyptus services, maps them to common eucarc key values, and returns
         the dict of the mapping.
@@ -267,10 +369,18 @@ class AutoCreds(Eucarc):
         assert isinstance(serviceconnection, ServiceConnection)
         services = serviceconnection.get_services()
         ret_dict = {}
-        for service in services:
-            for key, serv_value in eucarc_to_service_map.iteritems():
-                if service.type == serv_value:
-                    ret_dict[key] = str(service.uri)
+        try:
+            domain_prop = serviceconnection.get_property('system.dns.dnsdomain')
+            domain = domain_prop.value
+            port_prop = serviceconnection.get_property('bootstrap.webservices.port')
+            port = port_prop.value
+            return cls._get_service_paths_from_domain(domain=domain, port=port, secure=secure)
+        except Exception as DE:
+            print
+            for service in services:
+                for service_name, mapping in aws_to_euca_service_map.iteritems():
+                    if service.type == mapping.euca_service:
+                        ret_dict[mapping.eucarc] = str(service.uri)
         return ret_dict
 
     def get_local_eucarc(self, credpath):
@@ -441,7 +551,7 @@ class AutoCreds(Eucarc):
             default_order.append(try_clc_db)
         if self._clc_ip and self._credpath and \
                 (self._has_updated_connect_args or self._sshconnection):
-            # if any ssh related arguements were provided, assume the user would like
+            # if any ssh related arguments were provided, assume the user would like
             # to try remote first
             if try_remote(self):
                 return
