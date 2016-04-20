@@ -1,8 +1,9 @@
 from cloud_utils.net_utils.sshconnection import SshConnection
 from cloud_utils.log_utils import red, green, blue
 from cloud_utils.log_utils.eulogger import Eulogger
-from cloud_utils.log_utils import get_traceback
+from cloud_utils.log_utils import get_traceback, get_terminal_size
 import argparse
+import re
 from socket import inet_aton
 import struct
 import  time
@@ -35,20 +36,29 @@ class RemoteCommands(object):
                             help='Ssh connection timeout in seconds')
         self.parser.add_argument('--thread-count', default=thread_count, type=int,
                             help='Number of threads used to run commands on hosts')
-        self.parser.add_argument('-l', '--log_level', default=log_level,
+        self.parser.add_argument('-l', '--log-level', default=log_level,
                             help='Loglevel')
-        self.args = self.parser.parse_args()
+        if ips or hostfile:
+            args = ""
+        else:
+            args = None
+        self.args = self.parser.parse_args(args=args)
         self.hostfile = self.args.hostfile
         self.password = self.args.password
         self.username = self.args.username
         self.command = self.args.command
+        self.timeout = self.args.timeout
+        self.log_level = self.args.log_level
         self.results = {}
         self.maxwait = .5
-        self.ips = self.args.ips
-        self.logger = Eulogger('RemoteCmds', stdout_level=self.args.log_level)
+        self.ips = ips or self.args.ips
+        self.logger = Eulogger('RemoteCmds', stdout_level=self.log_level)
         if self.ips:
-            self.ips = str(self.ips).replace(',', ' ')
-            self.ips = self.ips.split()
+            if isinstance(self.ips, basestring):
+                self.ips = str(self.ips).replace(',', ' ')
+                self.ips = self.ips.split()
+            else:
+                self.ips = list(self.ips)
         if self.args.hostfile:
             with open(hostfile) as f:
                 self.ips.extend(f.readlines())
@@ -57,57 +67,59 @@ class RemoteCommands(object):
                              'command against')
 
     def do_ssh(self, q, lock, name, command):
-        try:
-            self._do_ssh(q, lock, name, command)
-        except Exception as SE:
-            q.task_done()
-            self.logger.error('{0}\nError in do_ssh:{0}'.format(get_traceback(), SE))
-
-    def _do_ssh(self, q, lock, name, command):
         empty = False
+        q = None
         while not empty:
-            ssh = None
-            logger = None
-            self.logger.debug('Thread: {0}, in Q loop...'.format(name))
-            host = None
             try:
-                host = q.get(timeout=self.maxwait)
-            except Empty:
-                empty = True
-                break
-            start = time.time()
-            try:
-                self.logger.debug('Connecting to new host:' + str(host))
-                logger = Eulogger(str(host))
-                ssh = SshConnection(host=host, username=self.username, password=self.password,
-                                    debug_connect=True, timeout=self.args.timeout, verbose=True,
-                                    logger=logger)
-                logger.debug('host: {0} running command:{1} '.format(host, command))
-                out = ssh.cmd(str(command), listformat=True)
-                logger.debug('Done with host: {0}'.format(host))
-                elapsed = int(time.time() - start)
-                with lock:
-                    self.results[host] = {'status': out.get('status'), 'output': out.get('output'),
-                                     'elapsed': elapsed}
-            except Exception as E:
-                elapsed = int(time.time() - start)
-                with lock:
-                    self.results[host] = {'status': -1, 'output': str(E),
-                                     'elapsed': elapsed}
-            finally:
-                logger.debug('Closing ssh to host: {0}'.format(host))
-                if ssh:
-                    ssh.connection.close()
+                ssh = None
+                logger = None
+                self.logger.debug('Thread: {0}, in Q loop...'.format(name))
+                host = None
                 try:
-                    if logger:
-                        logger.close()
-                except:
-                    pass
-                q.task_done()
-                logger.debug('Closed ssh to host: {0}'.format(host))
+                    host = q.get(timeout=self.maxwait)
+                except Empty:
+                    empty = True
+                    break
+                start = time.time()
+                try:
+                    self.logger.debug('Connecting to new host:' + str(host))
+                    logger = Eulogger(str(host))
+                    ssh = SshConnection(host=host, username=self.username, password=self.password,
+                                        debug_connect=True, timeout=self.args.timeout, verbose=True,
+                                        logger=logger)
+                    logger.debug('host: {0} running command:{1} '.format(host, command))
+                    out = ssh.cmd(str(command), listformat=True)
+                    logger.debug('Done with host: {0}'.format(host))
+                    elapsed = int(time.time() - start)
+                    with lock:
+                        self.results[host] = {'status': out.get('status'),
+                                              'output': out.get('output'),
+                                              'elapsed': elapsed}
+                except Exception as E:
+                    elapsed = int(time.time() - start)
+                    with lock:
+                        self.results[host] = {'status': -1, 'output': [str(E)],
+                                         'elapsed': elapsed}
+                finally:
+                    logger.debug('Closing ssh to host: {0}'.format(host))
+                    if ssh:
+                        ssh.connection.close()
+                        logger.debug('Closed ssh to host: {0}'.format(host))
+                    try:
+                        if logger:
+                            logger.close()
+                    except:
+                        pass
+            except Exception as SE:
+                self.logger.error('{0}\nError in do_ssh:{0}'.format(get_traceback(), SE))
+            finally:
+                if q is not None:
+                    q.task_done()
+                self.logger.debug('Finished task in thread:{0}'.format(name))
         self.logger.debug('{0}: Done with thread'.format(name))
 
-    def run_remote_commands(self, ips=None, printme=True):
+    def run_remote_commands(self, ips=None, command=None, ):
+        command = command or self.command
         iq = Queue()
         ips = ips or self.ips
         if not ips:
@@ -116,10 +128,14 @@ class RemoteCommands(object):
             ip = str(ip).strip().rstrip()
             iq.put(ip)
         tlock = Lock()
-        threadcount = self.args.thread_count or 1
+        threadcount = self.args.thread_count
+        if threadcount  > iq.qsize():
+            threadcount = iq.qsize()
+        if not iq:
+            return
         self.results = {}
         for i in range(threadcount):
-             t = Thread(target=self.do_ssh, args=(iq, tlock, i, self.command))
+             t = Thread(target=self.do_ssh, args=(iq, tlock, i, command))
              t.daemon = True
              t.start()
         self.logger.debug('Threads started now waiting for join')
@@ -128,19 +144,38 @@ class RemoteCommands(object):
         time.sleep(self.maxwait + .1)
         return self.results
 
-    def show_results(self, results=None, printmethod=None):
+    def show_results(self, results=None, max_width=None, printmethod=None):
         results = results or self.results
-        pt = PrettyTable(['HOST', 'RES', 'TIME', 'OUTPUT'])
+        if not max_width:
+            max_height, max_width = get_terminal_size()
+        host_w = 24
+        res_w = 4
+        time_w = 6
+        max_width = max_width - (host_w + res_w + time_w) - 5
+        output_hdr = "OUTPUT"
+        pt = PrettyTable(['HOST', 'RES', 'TIME', output_hdr])
         pt.align = 'l'
         pt.hrules = 1
         pt.padding_width = 0
-        max = 80
-        pt.max_width['OUTPUT'] = max
-        for host in sorted(results, key=lambda ip: struct.unpack("!L", inet_aton(ip))[0]):
+        max_width = max_width - (host_w + res_w + time_w)
+        pt.max_width[output_hdr] = max_width
+        def sort_meth(ip):
+            try:
+                if re.match("^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"):
+                    return struct.unpack("!L", inet_aton(ip))[0]
+            except:
+                pass
+            return ip
+
+        for host in sorted(results, key=sort_meth):
             result = self.results.get(host)
             output = ""
             for line in result.get('output'):
-                output += str("{0}\n".format(line))
+                line.rstrip()
+                for x in xrange(0, len(line), max_width - 1):
+                    part = str('{output: <{length}}'.format(output=line[x:(x + max_width - 1)],
+                                                            length=max_width))
+                    output += part
             status = result.get('status')
             if status == 0:
                 color = green

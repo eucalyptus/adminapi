@@ -3,6 +3,7 @@ from sys import stderr
 from cloud_utils.log_utils import red
 
 
+
 def local(cmd, print_method=None):
         """
         Run a command on the localhost
@@ -41,3 +42,4 @@ def local(cmd, print_method=None):
             error.output = output
             raise error
         return output.split("\n")
+
