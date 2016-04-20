@@ -168,7 +168,8 @@ aws_to_euca_service_map = {
     "monitoring": ServiceMapping('monitoring', "cloudwatch", 'aws_cloudwatch_url',
                                  'monitoring-url'),
     "sts": ServiceMapping("sts", "tokens", 'token_url', 'sts-url'),
-    "reporting": ServiceMapping("reporting", 'reporting', 'reporting_url', 'reporting-url')
+    "reporting": ServiceMapping("reporting", 'reporting', 'reporting_url', 'reporting-url'),
+    "properites": ServiceMapping("properties", "properties", 'properties_url', 'properties-url')
 }
 
 
