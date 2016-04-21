@@ -982,6 +982,7 @@ class Machine(object):
                         'used': 100 - float(idle)}
 
             cpu_stats = {}
+            out = []
             try:
                 out = self.sys('mpstat -P ALL', code=0, verbose=False)
                 for line in out:
@@ -1541,7 +1542,10 @@ class Machine(object):
         unit - optional -integer used to divide return value.
                Can be used to convert KB to MB, GB, TB, etc..
         """
-        size = int(self.get_df_info_at_path(path=path)['available'])
+        if not path:
+            raise ValueError('Must supply path to get available disk. Got:"{0}/{1}"'
+                             .format(path, type(path)))
+        size = int(self.get_df_info(path=path)[0]['available'])
         return size / unit
 
     def assertFilePresent(self, filepath):
