@@ -530,7 +530,12 @@ class Machine(object):
         ret = self.cmd(cmd, timeout=timeout, cb=self.wget_status_cb)
         if ret['status'] != 0:
             raise RuntimeError('wget_remote_image failed with status:' + str(ret['status']))
-        self.log.debug('wget_remote_image succeeded')
+        if not dest_file_name:
+            dest_file_name = os.path.basename(url)
+        dest_path = os.path.join((path or ""), dest_file_name)
+        self.log.debug('wget_remote_image succeeded: "{0}"'.format(dest_path))
+        return dest_path    
+
 
     def wget_status_cb(self, buf):
         """
