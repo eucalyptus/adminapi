@@ -530,7 +530,12 @@ class Machine(object):
         ret = self.cmd(cmd, timeout=timeout, cb=self.wget_status_cb)
         if ret['status'] != 0:
             raise RuntimeError('wget_remote_image failed with status:' + str(ret['status']))
-        self.log.debug('wget_remote_image succeeded')
+        if not dest_file_name:
+            dest_file_name = os.path.basename(url)
+        dest_path = os.path.join((path or ""), dest_file_name)
+        self.log.debug('wget_remote_image succeeded: "{0}"'.format(dest_path))
+        return dest_path    
+
 
     def wget_status_cb(self, buf):
         """
@@ -982,6 +987,7 @@ class Machine(object):
                         'used': 100 - float(idle)}
 
             cpu_stats = {}
+            out = []
             try:
                 out = self.sys('mpstat -P ALL', code=0, verbose=False)
                 for line in out:
@@ -1541,7 +1547,10 @@ class Machine(object):
         unit - optional -integer used to divide return value.
                Can be used to convert KB to MB, GB, TB, etc..
         """
-        size = int(self.get_df_info_at_path(path=path)['available'])
+        if not path:
+            raise ValueError('Must supply path to get available disk. Got:"{0}/{1}"'
+                             .format(path, type(path)))
+        size = int(self.get_df_info(path=path)[0]['available'])
         return size / unit
 
     def assertFilePresent(self, filepath):
