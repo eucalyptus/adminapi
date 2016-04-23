@@ -1206,9 +1206,53 @@ class ServiceConnection(AWSQueryConnection):
             raise ValueError('modify_cloud_network_config_json: net_dict not string or json')
         self.modify_property(net_prop, net_dict)
 
+    ###############################################################################################
+    #                           Instance Migration                                                #
+    ###############################################################################################
 
+    def migrate_instances(self, instance_id=None, source_host=None, include_dest=None, exclude_dest=None):
+        """
+        Migrate instances
 
+        :param instance_id
+        :param source_host
+        :param include_dest
+        :param exclude_dest
+        :return: True if succeeds
+        :raise Exception on fail
+        """
+        ret_prop = None
+        params = {}
+        action = 'MigrateInstances'
 
+        if source_host and instance_id:
+            raise Exception('source_host and instance_id params are mutually exclusive.')
+
+        if include_dest and exclude_dest:
+            raise Exception('include_dest and exclude_dest params are mutually exclusive.')
+
+        if include_dest or exclude_dest:
+            if not source_host and not instance_id:
+                raise Exception('one of the arguments source_host or instance_id is required.')
+
+        if instance_id:
+            params['InstanceId'] = instance_id
+        if source_host:
+            params['SourceHost'] = source_host
+        if include_dest:
+            params['AllowHosts'] = True
+            params['DestinationHost.1'] = include_dest
+        elif exclude_dest:
+            params['AllowHosts'] = False
+            params['DestinationHost.1'] = exclude_dest
+        markers = ['euca:MigrateInstancesResponseType', 'MigrateInstancesResponseType']
+
+        self.log.debug("MigrateInstances parameters: " + str(params))
+        try:
+            self.ec2_connection.get_list(action, params, markers)
+        except:
+            raise Exception("Migration failed.")
+        return True
 
     ###############################################################################################
     #                           Cloud Service Cert Methods (ie: cloud-cert.pem)                   #
