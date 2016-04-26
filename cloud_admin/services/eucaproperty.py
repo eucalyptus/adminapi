@@ -4,7 +4,7 @@ from cloud_utils.log_utils import get_traceback
 from cloud_utils.log_utils import markup
 import re
 from prettytable import PrettyTable, ALL
-
+from sre_constants import error
 
 def SHOW_PROPERTIES(connection, properties=None, description=True, defaults=True, readonly=True,
                     grid=ALL, print_method=None, print_table=True, search=None, *nameprefix):
@@ -215,8 +215,14 @@ class EucaProperty(EucaBaseObj):
         self.update()
         if regex is None:
             regex = "{0}|\*+".format(value)
-
-        if not re.match(regex, self.value):
+        try:
+            match = re.match(regex, self.value)
+        except error as constants_error:
+            self.connection.err_method('Trying string comparison due to regex error:"{0}"'
+                                       .format(constants_error))
+            if str(value).strip() == self.value.strip():
+                match = True
+        if not match:
             raise ValueError('Modified property value does not match expected regex:{0}, '
                              'current:{1}'.format(regex, self.value))
         return self

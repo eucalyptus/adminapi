@@ -68,7 +68,7 @@ class RemoteCommands(object):
 
     def do_ssh(self, q, lock, name, command):
         empty = False
-        q = None
+        q = q or None
         while not empty:
             try:
                 ssh = None
@@ -113,17 +113,21 @@ class RemoteCommands(object):
             except Exception as SE:
                 self.logger.error('{0}\nError in do_ssh:{0}'.format(get_traceback(), SE))
             finally:
-                if q is not None:
+                if q is not None and not empty:
                     q.task_done()
                 self.logger.debug('Finished task in thread:{0}'.format(name))
         self.logger.debug('{0}: Done with thread'.format(name))
 
     def run_remote_commands(self, ips=None, command=None, ):
         command = command or self.command
-        iq = Queue()
         ips = ips or self.ips
         if not ips:
-            raise ValueError('run_remote_commands: IP list was empty:"{0}"'.format(ips))
+            self.logger.warning('No IPs provided to run_remote_commands!')
+            return self.results
+        command = command or ""
+        iq = Queue()
+        #if not ips:
+        #    raise ValueError('run_remote_commands: IP list was empty:"{0}"'.format(ips))
         for ip in ips:
             ip = str(ip).strip().rstrip()
             iq.put(ip)
