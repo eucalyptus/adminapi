@@ -3,10 +3,11 @@ from cloud_utils.log_utils import red, green, blue
 from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_utils.log_utils import get_traceback, get_terminal_size
 import argparse
+import os
 import re
 from socket import inet_aton
 import struct
-import  time
+import time
 from threading import Thread, Lock
 from Queue import Queue, Empty
 from prettytable import PrettyTable
@@ -51,7 +52,7 @@ class RemoteCommands(object):
         self.log_level = self.args.log_level
         self.results = {}
         self.maxwait = .5
-        self.ips = ips or self.args.ips
+        self.ips = ips or self.args.ips or []
         self.logger = Eulogger('RemoteCmds', stdout_level=self.log_level)
         if self.ips:
             if isinstance(self.ips, basestring):
@@ -60,7 +61,7 @@ class RemoteCommands(object):
             else:
                 self.ips = list(self.ips)
         if self.args.hostfile:
-            with open(hostfile) as f:
+            with open(os.path.expanduser(self.args.hostfile)) as f:
                 self.ips.extend(f.readlines())
         if not self.ips:
             raise ValueError('No hosts provided. Use --hostfile or --ips to provide hosts to run '
