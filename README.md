@@ -11,8 +11,8 @@ A 'c' compiler may need to be installed beforehand (for Paramiko/ssh dependencie
 If pip/easy_install is not available in your environment use your package manager to
 install python-setuptools as well:
 
-    yum install python-setuptools gcc python-devel git
-    apt-get install python-setuptools gcc python-dev git
+    yum install python-setuptools gcc python-devel git libffi-devel openssl-devel
+    apt-get install python-setuptools gcc python-dev git libffi-devel openssl-devel
 
 Installing using pip or easy_install:
 
