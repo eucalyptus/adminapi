@@ -500,7 +500,7 @@ class Midget(object):
         else:
             return titlept
 
-    def show_ports(self, ports, printme=True):
+    def show_ports(self, ports, verbose=True, printme=True):
         """
         Show formatted info about a list of ports or a specific port.
         For more verbose info about a specific port use show_port_summary()
@@ -538,8 +538,11 @@ class Midget(object):
                             port.get_type(),
                             port.get_admin_state_up(),
                             port.get_peer_id()])
-
-                if bgps and bgps != "ERROR":
+                outbound_filter_id = port.get_outbound_filter_id()
+                inbound_filter_id = port.get_inbound_filter_id()
+                # Append bgp and filter to table
+                if (bgps and bgps != "ERROR") or (verbose and
+                                                      (outbound_filter_id or inbound_filter_id)):
                     lines = []
                     for line in str(pt).splitlines():
                         line = line.strip()
@@ -548,8 +551,21 @@ class Midget(object):
                     # footer = lines[-1]
                     buf += "\n".join(lines) + '\n'
                     pt = None
-                    buf += self._link_table_buf(self.show_bgps(port.get_bgps(), printme=False))
-                    # buf += footer + '\n'
+                    if outbound_filter_id:
+                        buf += self._link_table_buf(
+                            "PORT:{0} OUTBOUND FILTER:\n{1}"
+                                .format(port.get_id(),
+                                        self.show_chain(self.mapi.get_chain(outbound_filter_id),
+                                                        printme=False)))
+                    if inbound_filter_id:
+                        buf += self._link_table_buf(
+                            "PORT:{0} INBOUND FILTER:\n{1}"
+                                .format(port.get_id(),
+                                        self.show_chain(self.mapi.get_chain(inbound_filter_id),
+                                                        printme=False)))
+                    if bgps:
+                        buf += self._link_table_buf(self.show_bgps(port.get_bgps(), printme=False))
+
             if pt:
                 buf += str(pt) + '\n'
         if printme:
