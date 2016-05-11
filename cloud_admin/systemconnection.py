@@ -24,6 +24,7 @@ class SystemConnection(ServiceConnection):
                  username='root',
                  password=None,
                  keypath=None,
+                 region_domain=None,
                  proxy_hostname=None,
                  proxy_username=None,
                  proxy_password=None,
@@ -59,6 +60,7 @@ class SystemConnection(ServiceConnection):
         self._credpath = credpath
         self.log = Eulogger(identifier=self.__class__.__name__, stdout_level=log_level)
         self.creds = AutoCreds(credpath=self._credpath,
+                               region_domain=region_domain,
                                aws_access_key=aws_access_key,
                                aws_secret_key=aws_secret_key,
                                aws_account_name=euca_account,

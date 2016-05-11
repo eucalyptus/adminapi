@@ -254,8 +254,10 @@ class AutoCreds(Eucarc):
 
     @property
     def region_domain(self):
-        if not self._region_domain and self.serviceconnection:
+        if self._region_domain is None and self.serviceconnection:
+            self.log.debug('Attempting to fetching service domain from property')
             domain_prop = self.serviceconnection.get_property('system.dns.dnsdomain')
+            self.log.debug('Got service domain: {0}'.format(domain_prop.value))
             domain = domain_prop.value
             if domain:
                 self._region_domain = domain
