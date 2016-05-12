@@ -17,7 +17,7 @@ class RemoteCommands(object):
     Utility to run commands on remote machines via ssh in batches.
     """
     
-    def __init__(self, hostfile=None, ips=None, password=None, username='root',
+    def __init__(self, hostfile=None, ips=None, password=None, keypath=None, username='root',
                  command='echo "ALIVE', timeout=5, thread_count=20, log_level='debug'):
 
         self.parser = argparse.ArgumentParser(
@@ -29,12 +29,16 @@ class RemoteCommands(object):
                             help='comma or space separated list of ips and/or hostnames')
         self.parser.add_argument('-p', '--password', default=password,
                             help='Ssh password used to connect to hosts')
+        self.parser.add_argument('-k', '--keypath', default=keypath,
+                            help='Local path to specific ssh key used to connect to hosts')
         self.parser.add_argument('-u', '--username', default=username,
                             help='Ssh username used to connect to hosts')
         self.parser.add_argument('-c', '--command', default=command,
                             help='file with list of ips and/or hostnames')
         self.parser.add_argument('-t', '--timeout', default=timeout, type=int,
                             help='Ssh connection timeout in seconds')
+        self.parser.add_argument('-b', '--batch-timeout', default=0, type=int,
+                            help='Timeout for sum of all commands to complete in seconds')
         self.parser.add_argument('--thread-count', default=thread_count, type=int,
                             help='Number of threads used to run commands on hosts')
         self.parser.add_argument('-l', '--log-level', default=log_level,
@@ -46,6 +50,7 @@ class RemoteCommands(object):
         self.args = self.parser.parse_args(args=args)
         self.hostfile = self.args.hostfile
         self.password = self.args.password
+        self.keypath = self.args.keypath
         self.username = self.args.username
         self.command = self.args.command
         self.timeout = self.args.timeout
@@ -86,8 +91,8 @@ class RemoteCommands(object):
                     self.logger.debug('Connecting to new host:' + str(host))
                     logger = Eulogger(str(host))
                     ssh = SshConnection(host=host, username=self.username, password=self.password,
-                                        debug_connect=True, timeout=self.args.timeout, verbose=True,
-                                        logger=logger)
+                                        keypath=self.keypath, debug_connect=True,
+                                        timeout=self.args.timeout, verbose=True, logger=logger)
                     logger.debug('host: {0} running command:{1} '.format(host, command))
                     out = ssh.cmd(str(command), listformat=True)
                     logger.debug('Done with host: {0}'.format(host))
@@ -144,7 +149,19 @@ class RemoteCommands(object):
              t.daemon = True
              t.start()
         self.logger.debug('Threads started now waiting for join')
-        iq.join()
+        if not self.args.batch_timeout:
+            iq.join()
+        else:
+            stop = time.time() + int(self.args.batch_timeouttimeout)
+            while iq.unfinished_tasks and time.time() < stop:
+                time.sleep(.5)
+            if iq.unfinished_tasks:
+                for ip in iq.queue:
+                    with tlock:
+                        self.results[ip] = {'status': -1,
+                                            'output': 'Timed out after {0} seconds'
+                                                .format(int(self.args.batch_timeouttimeout)),
+                                            'elapsed': int(self.args.batch_timeouttimeout)}
         self.logger.debug('Done with join')
         time.sleep(self.maxwait + .1)
         return self.results
@@ -153,6 +170,7 @@ class RemoteCommands(object):
         results = results or self.results
         if not max_width:
             max_height, max_width = get_terminal_size()
+            max_width = max_width or 100
         host_w = 24
         res_w = 4
         time_w = 6
