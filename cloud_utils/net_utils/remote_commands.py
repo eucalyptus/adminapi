@@ -177,7 +177,6 @@ class RemoteCommands(object):
             self.logger.info(green('Got max_width: {0}'.format(max_width)))
             if max_width <= (host_w + res_w + time_w + pad_w):
                 max_width = 100
-        max_width = max_width - (host_w + res_w + time_w + pad_w)
         output_hdr = "OUTPUT"
         pt = PrettyTable(['HOST', 'RES', 'TIME', output_hdr])
         pt.align = 'l'
