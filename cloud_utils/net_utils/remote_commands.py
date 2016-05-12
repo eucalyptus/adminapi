@@ -168,14 +168,16 @@ class RemoteCommands(object):
 
     def show_results(self, results=None, max_width=None, printmethod=None):
         results = results or self.results
-        if not max_width:
-            max_height, max_width = get_terminal_size()
-            if max_width < 25:
-                max_width = 100
         host_w = 24
         res_w = 4
         time_w = 6
-        max_width = max_width - (host_w + res_w + time_w) - 5
+        pad_w = 5
+        if not max_width:
+            max_height, max_width = get_terminal_size()
+            self.logger.info(green('Got max_width: {0}'.format(max_width)))
+            if max_width <= (host_w + res_w + time_w + pad_w):
+                max_width = 100
+        max_width = max_width - (host_w + res_w + time_w + pad_w)
         output_hdr = "OUTPUT"
         pt = PrettyTable(['HOST', 'RES', 'TIME', output_hdr])
         pt.align = 'l'
