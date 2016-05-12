@@ -170,17 +170,21 @@ class RemoteCommands(object):
         results = results or self.results
         if not max_width:
             max_height, max_width = get_terminal_size()
+            self.logger.info(green('Got max_width: {0}'.format(max_width)))
             max_width = max_width or 100
-        host_w = 24
-        res_w = 4
-        time_w = 6
-        max_width = max_width - (host_w + res_w + time_w) - 5
         output_hdr = "OUTPUT"
         pt = PrettyTable(['HOST', 'RES', 'TIME', output_hdr])
+        host_w = 0
+        for host in results.keys():
+            if len(host) > host_w:
+                host_w = len(host)
+        res_w = 4
+        time_w = 6
+        pad_w = len(pt.field_names) * 2
         pt.align = 'l'
         pt.hrules = 1
         pt.padding_width = 0
-        max_width = max_width - (host_w + res_w + time_w)
+        max_width = max_width - (host_w + res_w + time_w + pad_w)
         pt.max_width[output_hdr] = max_width
         def sort_meth(ip):
             try:
