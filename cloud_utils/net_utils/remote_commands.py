@@ -170,7 +170,8 @@ class RemoteCommands(object):
         results = results or self.results
         if not max_width:
             max_height, max_width = get_terminal_size()
-            max_width = max_width or 100
+            if max_width < 25:
+                max_width = 100
         host_w = 24
         res_w = 4
         time_w = 6
