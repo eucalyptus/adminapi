@@ -129,6 +129,7 @@ class RemoteCommands(object):
     def run_remote_commands(self, ips=None, command=None, ):
         command = command or self.command
         ips = ips or self.ips
+        self.results = {}
         if not ips:
             self.logger.warning('No IPs provided to run_remote_commands!')
             return self.results
