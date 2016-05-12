@@ -38,7 +38,9 @@ class RemoteCommands(object):
         self.parser.add_argument('-t', '--timeout', default=timeout, type=int,
                             help='Ssh connection timeout in seconds')
         self.parser.add_argument('-b', '--batch-timeout', default=0, type=int,
-                            help='Timeout for sum of all commands to complete in seconds')
+                            help='Timeout for sum of all tasks to complete in seconds. '
+                                 'This includes time to create all remote '
+                                 'connections + execute commands')
         self.parser.add_argument('--thread-count', default=thread_count, type=int,
                             help='Number of threads used to run commands on hosts')
         self.parser.add_argument('-l', '--log-level', default=log_level,
@@ -152,16 +154,21 @@ class RemoteCommands(object):
         if not self.args.batch_timeout:
             iq.join()
         else:
-            stop = time.time() + int(self.args.batch_timeouttimeout)
-            while iq.unfinished_tasks and time.time() < stop:
+            start = time.time()
+            while iq.unfinished_tasks and (time.time()-start < int(self.args.batch_timeout)):
                 time.sleep(.5)
             if iq.unfinished_tasks:
-                for ip in iq.queue:
+                self.logger.warning(red('Possible unfinished tasks detected '
+                                        'after elapsed:{0}. Queue:{1}'
+                                        .format(time.time()-start, iq.queue)))
+                time.sleep(.1 * len(ips))
+                for ip in ips:
                     with tlock:
-                        self.results[ip] = {'status': -1,
-                                            'output': 'Timed out after {0} seconds'
-                                                .format(int(self.args.batch_timeouttimeout)),
-                                            'elapsed': int(self.args.batch_timeouttimeout)}
+                        if ip not in self.results.keys():
+                            self.results[ip] = {'status': -1,
+                                                'output': ['Timed out after {0} seconds'
+                                                    .format(int(self.args.batch_timeout))],
+                                                'elapsed': int(self.args.batch_timeout)}
         self.logger.debug('Done with join')
         time.sleep(self.maxwait + .1)
         return self.results
@@ -170,7 +177,7 @@ class RemoteCommands(object):
         results = results or self.results
         if not max_width:
             max_height, max_width = get_terminal_size()
-            self.logger.info(green('Got max_width: {0}'.format(max_width)))
+            self.logger.debug(green('Got terminal width: {0}'.format(max_width)))
             max_width = max_width or 100
         output_hdr = "OUTPUT"
         pt = PrettyTable(['HOST', 'RES', 'TIME', output_hdr])
