@@ -98,16 +98,17 @@ class RemoteCommands(object):
                     logger.debug('host: {0} running command:{1} '.format(host, command))
                     out = ssh.cmd(str(command), listformat=True)
                     logger.debug('Done with host: {0}'.format(host))
-                    elapsed = int(time.time() - start)
+
                     with lock:
                         self.results[host] = {'status': out.get('status'),
                                               'output': out.get('output'),
-                                              'elapsed': elapsed}
+                                              'elapsed': int(time.time() - start)}
                 except Exception as E:
-                    elapsed = int(time.time() - start)
+                    err = "{0}\n{1}".format(get_traceback(), E)
                     with lock:
-                        self.results[host] = {'status': -1, 'output': [str(E)],
-                                         'elapsed': elapsed}
+                        self.results[host] = {'status': -1,
+                                              'output': [err],
+                                              'elapsed': int(time.time() - start)}
                 finally:
                     logger.debug('Closing ssh to host: {0}'.format(host))
                     if ssh:
@@ -161,7 +162,7 @@ class RemoteCommands(object):
             if iq.unfinished_tasks:
                 self.logger.warning(red('Possible unfinished tasks detected '
                                         'after elapsed:{0}. Queue:{1}'
-                                        .format(time.time()-start, iq.queue)))
+                                        .format(time.time() - start, iq.queue)))
                 time.sleep(.1 * len(ips))
                 for ip in ips:
                     with tlock:
@@ -216,7 +217,9 @@ class RemoteCommands(object):
                 color = green
             else:
                 color = red
-            pt.add_row([blue(host), color(result.get('status')), color(result.get('elapsed')),
+            pt.add_row([blue(host),
+                        color(result.get('status', None)),
+                        color(result.get('elapsed', None)),
                         color(output)])
         buf = "\n{0}\n".format(pt)
         if printmethod:
