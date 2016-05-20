@@ -273,14 +273,20 @@ class EucaHost(Machine):
         :return: Returns the process id for eucalyptus-nc running on this machine, or
         None if not found.
         """
-        return self.get_eucalyptus_service_pid('eucalyptus-nc.pid')
+        pid = self.get_eucalyptus_service_pid('eucalyptus-node.pid')
+        if pid is None:
+            pid = self.get_eucalyptus_service_pid('eucalyptus-nc.pid')
+        return pid
 
     def get_eucalyptus_cc_pid(self):
         """
         :return: Returns the process id for eucalyptus-cc running on this machine, or
          None if not found.
         """
-        return self.get_eucalyptus_service_pid('eucalyptus-cc.pid')
+        pid = self.get_eucalyptus_service_pid('eucalyptus-cluster.pid')
+        if pid is None:
+            pid = self.get_eucalyptus_service_pid('eucalyptus-cc.pid')
+        return pid
 
     def get_uptime(self):
         return int(self.sys('cat /proc/uptime', code=0)[0].split()[1].split('.')[0])

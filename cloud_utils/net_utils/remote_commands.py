@@ -96,7 +96,7 @@ class RemoteCommands(object):
                                         keypath=self.keypath, debug_connect=True,
                                         timeout=self.args.timeout, verbose=True, logger=logger)
                     logger.debug('host: {0} running command:{1} '.format(host, command))
-                    out = ssh.cmd(str(command), listformat=True)
+                    out = ssh.cmd(str(command), listformat=True, timeout=self.args.timeout)
                     logger.debug('Done with host: {0}'.format(host))
 
                     with lock:
@@ -167,10 +167,11 @@ class RemoteCommands(object):
                 for ip in ips:
                     with tlock:
                         if ip not in self.results.keys():
-                            self.results[ip] = {'status': -1,
-                                                'output': ['Timed out after {0} seconds'
-                                                    .format(int(self.args.batch_timeout))],
-                                                'elapsed': int(self.args.batch_timeout)}
+                            self.results[ip] = {
+                                'status': -1,
+                                'output': ['Timed out after {0} '
+                                           'seconds'.format(int(self.args.batch_timeout))],
+                                'elapsed': int(self.args.batch_timeout)}
         self.logger.debug('Done with join')
         time.sleep(self.maxwait + .1)
         return self.results
