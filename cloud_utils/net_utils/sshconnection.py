@@ -664,7 +664,7 @@ class SshConnection():
             self.lastexitcode = SshConnection.cmd_timeout_err_code
             elapsed = str(int(time.time() - start))
             self.debug("Command (" + cmd + ") timeout exception after " + str(elapsed) +
-                       " seconds\nException", elapsed=elapsed)
+                       " seconds\nException")
             raise cte
         return ret
 
