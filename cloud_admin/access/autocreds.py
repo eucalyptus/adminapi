@@ -196,7 +196,7 @@ class AutoCreds(Eucarc):
                  logger=None,
                  log_level='INFO',
                  eucarc_obj=None,
-                 existing_certs=True,
+                 existing_certs=None,
                  service_connection=None,
                  keysdir=None,
                  string=None,
