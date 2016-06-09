@@ -90,7 +90,7 @@ example with proxy:
 """
 
 import copy
-from httplib import HTTPConnection
+from httplib import HTTPConnection, CannotSendRequest
 import os
 import paramiko
 from paramiko.sftp_client import SFTPClient
@@ -275,6 +275,7 @@ class SshConnection():
             self.key_files = str(self.key_files).split(',')
         self.find_keys = find_keys
         self.debug_connect = debug_connect
+        self._http_connections = {}
 
         # Used to store the last cmd attempted and it's exit code
         self.lastcmd = ""
@@ -990,6 +991,15 @@ class SshConnection():
         # could connect
         return False
 
+    def _get_dict_id(self, dict_to_hash):
+        """
+        Creates a somewhat unique value from a dictionary of values.
+        The intent is to provide an id for a unique set of dictionary values.
+        :returns int
+        """
+        return int(abs(reduce(lambda x, y: x ^ y,
+                              [hash(item) for item in dict_to_hash.items()])))
+
     def create_http_fwd_connection(self, destport, dest_addr='127.0.0.1', peer=None,
                                    localport=None, trans=None, httpaddr='127.0.0.1',
                                    **connection_kwargs):
@@ -1008,6 +1018,24 @@ class SshConnection():
         assert isinstance(trans, paramiko.Transport)
         if peer is None:
             peer = trans.getpeername()[0]
+        connection_kwargs = connection_kwargs or {}
+        local_arg_dict = {'destport': destport,
+                           'dest_addr': dest_addr,
+                           'peer': peer,
+                           'localport': localport,
+                           'trans': trans,
+                           'httpaddr': httpaddr,
+                            }
+        local_arg_dict.update(connection_kwargs)
+        connection_id = self._get_dict_id(local_arg_dict)
+        # If there is an existing connection return it
+        if connection_id in self._http_connections.keys():
+            http = self._http_connections[connection_id]
+            if http.sock is not None:
+                return {'connection': self._http_connections[connection_id],
+                        'id': connection_id}
+            else:
+                del self._http_connections[connection_id]
         if localport is None:
             localport = self._get_local_unused_port(start=9000)
         self.debug('Making forwarded request from "localhost:{0}" to "{1}:{2}"'
@@ -1016,13 +1044,14 @@ class SshConnection():
                    .format('direct-tcpip', dest_addr, destport, peer, localport))
         chan = trans.open_channel(kind='direct-tcpip', dest_addr=(dest_addr, destport),
                                   src_addr=(peer, localport))
-        connection_kwargs = connection_kwargs or {}
+
         connection_kwargs['host'] = httpaddr
         connection_kwargs['port'] = destport
         self.debug('Creating HTTP connection with kwargs:\n{0}\n'.format(connection_kwargs))
         http = HTTPConnection(**connection_kwargs)
         http.sock = chan
-        return http
+        self._http_connections[connection_id] = http
+        return {'connection': http, 'id': connection_id}
 
     def http_fwd_request(self, url, body=None, headers={}, method='GET', trans=None,
                          localport=9797, destport=None):
@@ -1054,9 +1083,16 @@ class SshConnection():
         if destport is None:
             urlp = urlparse(url)
             destport = urlp.port or 80
-        http = self.create_http_fwd_connection(destport=destport, dest_addr='127.0.0.1',
-                                               httpaddr='127.0.0.1', localport=localport)
-        req = http.request(method=method, url=url, body=body, headers=headers)
+        conn_dict = self.create_http_fwd_connection(destport=destport, dest_addr='127.0.0.1',
+                                                    httpaddr='127.0.0.1', localport=localport)
+        http = conn_dict.get('connection')
+        conn_id = conn_dict.get('id')
+        try:
+            req = http.request(method=method, url=url, body=body, headers=headers)
+        except CannotSendRequest:
+            if conn_id in self._http_connections:
+                del self._http_connections[conn_id]
+            raise
         status = getattr(req, 'status', None)
         if status:
             self.debug('{0}:{1}, req status:{2}'.format(method, url, status))
