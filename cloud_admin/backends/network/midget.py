@@ -71,19 +71,34 @@ class Midget(object):
 
     def __init__(self, midonet_api_host, midonet_api_port='8080', midonet_username=None,
                  midonet_password=None, clc_ip=None, clc_password=None, systemconnection=None,
-                 clc_tunnel=False, mido_log_level='INFO', euca_log_level='INFO'):
+                 clc_tunnel=True, clc_tunnel_host='127.0.0.1', mido_log_level='INFO',
+                 euca_log_level='INFO'):
+        """
+
+        :param midonet_api_host: IP/hostname of machine serving midonet api
+        :param midonet_api_port: tcp port for midonet api
+        :param midonet_username: midonet api login username
+        :param midonet_password: midonet api login password
+        :param clc_ip: IP/Hostname of Eucalyptus CLC used to create a euca SystemConnection().
+        :param clc_password: ssh password of Eucalyptus CLC (if not using ssh key)
+        :param systemconnection: A Eucalyptus System Connection object.
+        :param clc_tunnel: Bool, if true will tunnel mido http requests through CLC. 
+        :param clc_tunnel_host: ip/hostname to use for tunneled api host destination, default is
+                                '127.0.0.1' relative to the CLC.
+        :param mido_log_level: Loglevel for this mid-get object
+        :param euca_log_level: Loglevel used if 'creating' a euca systemconnection object.
+        """
         self.midonet_api_host = midonet_api_host
         self.midonet_api_port = midonet_api_port
         self.midonet_username = midonet_username
         self.midonet_password = midonet_password
         if clc_tunnel:
             clc_ip = clc_ip or midonet_api_host
-            self.midonet_api_host = '127.0.0.1'
+            self.midonet_api_host = clc_tunnel_host
+            api_lib.do_request = self.tunneled_request
         self.mapi = MidonetApi(base_uri='http://{0}:{1}/midonet-api'
                                .format(self.midonet_api_host, self.midonet_api_port),
                                username=self.midonet_username, password=self.midonet_password)
-        if clc_tunnel:
-            api_lib.do_request = self.tunneled_request
         self.eucaconnection = systemconnection
         if not self.eucaconnection:
             clc_ip = clc_ip
