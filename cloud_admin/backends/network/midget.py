@@ -1,4 +1,8 @@
 from midonetclient.api import MidonetApi
+from midonetclient import api_lib
+from midonetclient import exc as mido_exc
+from webob import exc
+from midonetclient.api_lib import http_errors, from_json
 from midonetclient.router import Router
 from midonetclient import resource_base
 from midonetclient import vendor_media_type
@@ -8,9 +12,8 @@ from midonetclient.host import Host
 from midonetclient.host_interface_port import HostInterfacePort
 from midonetclient.host_interface import HostInterface
 from midonetclient.ip_addr_group import IpAddrGroup
-from cloud_utils.net_utils.sshconnection import SshConnection
 from cloud_utils.net_utils import is_address_in_network
-from cloud_utils.log_utils import markup
+from cloud_utils.log_utils import markup, get_traceback
 from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_admin.systemconnection import SystemConnection
 from boto.ec2.group import Group as BotoGroup
@@ -18,10 +21,11 @@ from boto.ec2.instance import Instance
 from boto.ec2.securitygroup import SecurityGroup, IPPermissions
 from prettytable import PrettyTable
 from json import loads as json_loads
-import requests
+from httplib import CannotSendRequest
+import json
 import socket
-import struct
 import time
+import urllib
 import re
 import copy
 
@@ -66,20 +70,28 @@ class Midget(object):
     _ADDR_SPACING = 22
 
     def __init__(self, midonet_api_host, midonet_api_port='8080', midonet_username=None,
-                 midonet_password=None, clc_ip=None, clc_password=None, systemconnection=None):
+                 midonet_password=None, clc_ip=None, clc_password=None, systemconnection=None,
+                 clc_tunnel=False, mido_log_level='INFO', euca_log_level='INFO'):
         self.midonet_api_host = midonet_api_host
         self.midonet_api_port = midonet_api_port
         self.midonet_username = midonet_username
         self.midonet_password = midonet_password
+        if clc_tunnel:
+            clc_ip = clc_ip or midonet_api_host
+            self.midonet_api_host = '127.0.0.1'
         self.mapi = MidonetApi(base_uri='http://{0}:{1}/midonet-api'
                                .format(self.midonet_api_host, self.midonet_api_port),
                                username=self.midonet_username, password=self.midonet_password)
-
+        if clc_tunnel:
+            api_lib.do_request = self.tunneled_request
         self.eucaconnection = systemconnection
         if not self.eucaconnection:
-            clc_ip = clc_ip or midonet_api_host
-            self.eucaconnection = SystemConnection(hostname=clc_ip, password=clc_password)
-        self.log = Eulogger(identifier='MidoDebug:{0}'.format(self.midonet_api_host))
+            clc_ip = clc_ip
+            self.eucaconnection = SystemConnection(hostname=clc_ip, password=clc_password,
+                                                   log_level=euca_log_level)
+        self.log = Eulogger(identifier='MidoDebug:{0}'.format(self.midonet_api_host),
+                            stdout_level=mido_log_level,
+                            parent_logger_name=self.__class__.__name__)
         self.default_indent = ""
         self._euca_instances = {}
         self._protocols = {}
@@ -89,6 +101,86 @@ class Midget(object):
 
     def info(self, msg):
         self.log.info(msg)
+
+    def set_mido_log_level(self, level):
+        """
+        Sets the log level on the mid-get operations
+        note the parent log level may also need to be adjusted.
+        To adjust the parent logger, use: self.set_euca_loglevel,
+        or set directly self.log.parent...
+        :param level: logging level integer or name (debug, info, etc)
+        :return:
+        """
+        self.log.set_stdout_loglevel(level)
+
+    def set_euca_parent_log_level(self, level):
+        level = self.log.format_log_level(level, default=None)
+        if level is None:
+            raise ValueError('Unknown and/or invalid log level: "{0}"'.format(level))
+        self.log.parent.level = level
+
+    def tunneled_request(self, uri, method, body=None, query=None, headers=None,
+                         ssh_host=None, depth=0, max_redirects=5):
+        """Process a http rest request with input and output json strings.
+
+        Sends json string serialized from body to uri with verb method and returns
+        a 2-tuple made of http response, and content deserialized into an object.
+        """
+        if depth > max_redirects:
+            raise ValueError('Request detph:{0} has exceed max_redirects:{1}, uri:{2}'
+                             .format(depth, max_redirects, uri))
+        ssh_host = ssh_host or self.eucaconnection.clc_machine.ssh
+        if not ssh_host:
+            raise ValueError('tunneled request requires an SshConnection. None provided and '
+                             'could not find clc ssh host in self.eucaconnection')
+        query = query or dict()
+        headers = headers or dict()
+        response = None
+        content = None
+        status = -1
+        self.log.debug("tunneled request: uri=%s, method=%s" % (uri, method))
+        self.log.debug("tunneled request: body=%s" % body)
+        self.log.debug("tunneled request: headers=%s" % headers)
+        if query:
+            uri += '?' + urllib.urlencode(query)
+        data = json.dumps(body) if body is not None else '{}'
+
+
+        try:
+            response = ssh_host.http_fwd_request(url=uri, method=method, body=data,
+                                                 headers=headers)
+            content = response.read()
+            status = response.status
+        except socket.error as serr:
+            if serr[1] == "ECONNREFUSED":
+                raise mido_exc.MidoApiConnectionRefused()
+            raise
+        except CannotSendRequest as CSE:
+            self.log.error('{0}\nCould not send request to midonet-api, err:"{1}"'
+                           .format(get_traceback(), CSE))
+            raise mido_exc.MidoApiConnectionRefused()
+
+        self.log.debug("do_request: response=%s | content=%s" % (response, content))
+        if int(status == 302):
+            self.log.info('302 response')
+            location = response.getheader('location')
+            if location and location != uri:
+                self.log.info('Redirecting: to url:{0}'.format(location))
+                depth += 1
+                return self.tunneled_request(uri=location, method=method,
+                                             body=body, query=query, headers=headers,
+                                             ssh_host=ssh_host, depth=depth,
+                                             max_redirects=max_redirects)
+        if int(status) > 400:
+            error = http_errors.get(str(status), None)
+            if not error:
+                error = RuntimeError
+            self.log.error("Got http error(response=%r, content=%r) for "
+                           "request(uri=%r, method=%r, body=%r, query=%r,headers=%r). "
+                           "Raising exception=%r" % (response, content, uri, method, body,
+                                                     query, headers, error))
+            raise error
+        return response, from_json(content)
 
     def _indent_table_buf(self, table, indent=None):
         if indent is None:
