@@ -1002,7 +1002,7 @@ class SshConnection():
 
     def create_http_fwd_connection(self, destport, dest_addr='127.0.0.1', peer=None,
                                    localport=None, trans=None, httpaddr='127.0.0.1',
-                                   **connection_kwargs):
+                                   do_cache=False, **connection_kwargs):
         """
         Create an http connection with port fowarding over this ssh session.
 
@@ -1050,11 +1050,12 @@ class SshConnection():
         self.debug('Creating HTTP connection with kwargs:\n{0}\n'.format(connection_kwargs))
         http = HTTPConnection(**connection_kwargs)
         http.sock = chan
-        self._http_connections[connection_id] = http
+        if do_cache:
+            self._http_connections[connection_id] = http
         return {'connection': http, 'id': connection_id}
 
     def http_fwd_request(self, url, body=None, headers={}, method='GET', trans=None,
-                         localport=9797, destport=None):
+                         localport=9797, destport=None, cache_connnection=False):
         """
         Attempts to forward a single http request over the current ssh session.
 
@@ -1079,12 +1080,13 @@ class SshConnection():
                  200
             data = response.read()
         """
-        # Todo - Use http connection pools
+        # Todo - Remove the sudo connection caching here(bad), and use http connection pools
         if destport is None:
             urlp = urlparse(url)
             destport = urlp.port or 80
         conn_dict = self.create_http_fwd_connection(destport=destport, dest_addr='127.0.0.1',
-                                                    httpaddr='127.0.0.1', localport=localport)
+                                                    httpaddr='127.0.0.1', localport=localport,
+                                                    do_cache=cache_connnection)
         http = conn_dict.get('connection')
         conn_id = conn_dict.get('id')
         try:

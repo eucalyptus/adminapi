@@ -12,8 +12,9 @@ from midonetclient.host import Host
 from midonetclient.host_interface_port import HostInterfacePort
 from midonetclient.host_interface import HostInterface
 from midonetclient.ip_addr_group import IpAddrGroup
-from cloud_utils.net_utils import is_address_in_network
+from cloud_utils.net_utils import is_address_in_network, sshconnection
 from cloud_utils.log_utils import markup, get_traceback
+from cloud_utils.log_utils import BackGroundColor, TextStyle, ForegroundColor
 from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_admin.systemconnection import SystemConnection
 from boto.ec2.group import Group as BotoGroup
@@ -82,7 +83,7 @@ class Midget(object):
         :param clc_ip: IP/Hostname of Eucalyptus CLC used to create a euca SystemConnection().
         :param clc_password: ssh password of Eucalyptus CLC (if not using ssh key)
         :param systemconnection: A Eucalyptus System Connection object.
-        :param clc_tunnel: Bool, if true will tunnel mido http requests through CLC. 
+        :param clc_tunnel: Bool, if true will tunnel mido http requests through CLC.
         :param clc_tunnel_host: ip/hostname to use for tunneled api host destination, default is
                                 '127.0.0.1' relative to the CLC.
         :param mido_log_level: Loglevel for this mid-get object
@@ -140,6 +141,15 @@ class Midget(object):
 
         Sends json string serialized from body to uri with verb method and returns
         a 2-tuple made of http response, and content deserialized into an object.
+        :param uri: URI of request http://addr/path etc
+        :param method: http method, GET, POST, etc
+        :param body: option body of request
+        :param query: query params, dict
+        :param headers: headers, dict
+        :param ssh_host: An SshConnection obj to tunnel requests through. Default is the CLC.
+        :param depth: current amount of redirects for this request
+        :param max_redirects: max amount of redirects allowed for this request
+        :return: (http response obj, data as json).
         """
         if depth > max_redirects:
             raise ValueError('Request detph:{0} has exceed max_redirects:{1}, uri:{2}'
@@ -148,6 +158,9 @@ class Midget(object):
         if not ssh_host:
             raise ValueError('tunneled request requires an SshConnection. None provided and '
                              'could not find clc ssh host in self.eucaconnection')
+        elif not isinstance(ssh_host, sshconnection.SshConnection):
+            raise ValueError('ssh_host must be of type SshConnection, got: "{0}/{1}'
+                             .format(ssh_host, type(ssh_host)))
         query = query or dict()
         headers = headers or dict()
         response = None
@@ -159,7 +172,6 @@ class Midget(object):
         if query:
             uri += '?' + urllib.urlencode(query)
         data = json.dumps(body) if body is not None else '{}'
-
 
         try:
             response = ssh_host.http_fwd_request(url=uri, method=method, body=data,
@@ -198,6 +210,12 @@ class Midget(object):
         return response, from_json(content)
 
     def _indent_table_buf(self, table, indent=None):
+        """
+        Used to offset a table when printed
+        :param table: Prettytable obj
+        :param indent: string to prepend as indentation
+        :return: string buffer
+        """
         if indent is None:
             indent = self.default_indent
         buf = str(table)
@@ -207,6 +225,13 @@ class Midget(object):
         return ret_buf
 
     def _link_table_buf(self, table, indent=4):
+        """
+        Created an ascii arrow or link to a table within a table.
+        This is used when a row within a table needs to be expanded into a sub-table.
+        :param table: pretty table obj
+        :param indent: int, number of spaces to indent
+        :return: resulting table string/buffer
+        """
         if not table:
             return None
         if indent < 2:
@@ -226,15 +251,25 @@ class Midget(object):
         return ret_buf
 
     def _errmsg(self, text):
-        self.info(self._bold(text), 101)
+        """
+        Used for logging errors with ascii markups.
+        :param text: msg to be logged.
+        """
+        self.log.error(markup(text, [TextStyle.BOLD, ForegroundColor.RED]))
 
     def _header(self, text):
-        return markup(text=text, markups=[1, 94])
+        return markup(text=text, markups=[TextStyle.BOLD, ForegroundColor.BLUE])
 
     def _bold(self, text, value=1):
-        return markup(text=text, markups=[value])
+        return markup(text=text, markups=[TextStyle.BOLD])
 
     def _highlight_buf_for_instance(self, buf, instance):
+        """
+        Highlight substrings that match information contained in a boto instance obj.
+        :param buf: string buffer
+        :param instance: boto instance obj
+        :return: marked up string buffer
+        """
         ret_buf = ""
         for line in str(buf).splitlines():
             searchstring = "{0}|{1}|{2}".format(instance.id,
@@ -254,6 +289,10 @@ class Midget(object):
 
     @property
     def protocols(self):
+        '''
+        Dict mapping of ip protocol names to numbers
+        :return: dict
+        '''
         if not self._protocols:
             proto_dict = {}
             for attr in dir(socket):
@@ -267,6 +306,12 @@ class Midget(object):
         return self.protocols.get(str(number), str(number))
 
     def _get_instance(self, instance):
+        """
+        Sanitize a value (ie usually an instance id or an instance obj) to return an
+        instance obj
+        :param instance: value to be checked, and or converted to a boto instance
+        :return: boto instance
+        """
         fetched_ins = None
         if not isinstance(instance, Instance):
             if isinstance(instance, basestring):
@@ -372,6 +417,11 @@ class Midget(object):
         return routers
 
     def get_router_for_instance(self, instance):
+        """
+        Fetch the midonet router obj for this instance
+        :param instance: either instance id or boto instance obj
+        :return: mido router obj
+        """
         instance = self._get_instance(instance)
         self.info('Getting router for instance:{0}, vpc:{1}'.format(instance.id, instance.vpc_id))
         routers = self.get_all_routers(search_dict={'name': instance.vpc_id})
@@ -383,6 +433,11 @@ class Midget(object):
         return router
 
     def get_router_by_name(self, name):
+        """
+        Fetch a midonet router by it's name
+        :param name: string, name of router
+        :return: mido router obj or None
+        """
         assert name
         search_string = "^{0}$".format(name)
         self.info('Using Search String:{0}'.format(search_string))
