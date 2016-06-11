@@ -93,6 +93,10 @@ class Midget(object):
         self.midonet_api_port = midonet_api_port
         self.midonet_username = midonet_username
         self.midonet_password = midonet_password
+
+        self.log = Eulogger(identifier='MidoDebug:{0}'.format(self.midonet_api_host),
+                            stdout_level=mido_log_level,
+                            parent_logger_name=self.__class__.__name__)
         if clc_tunnel:
             clc_ip = clc_ip or midonet_api_host
             self.midonet_api_host = clc_tunnel_host
@@ -105,9 +109,7 @@ class Midget(object):
             clc_ip = clc_ip
             self.eucaconnection = SystemConnection(hostname=clc_ip, password=clc_password,
                                                    log_level=euca_log_level)
-        self.log = Eulogger(identifier='MidoDebug:{0}'.format(self.midonet_api_host),
-                            stdout_level=mido_log_level,
-                            parent_logger_name=self.__class__.__name__)
+
         self.default_indent = ""
         self._euca_instances = {}
         self._protocols = {}
@@ -1469,7 +1471,8 @@ class Midget(object):
         """
         return self.reset_midolman_service_on_hosts(hosts=hosts)
 
-    def reset_midolman_service_on_hosts(self, hosts=None):
+    def reset_midolman_service_on_hosts(self, hosts=None, username=None, password=None,
+                                        keypath=None):
         if hosts and not isinstance(hosts, list):
             assert isinstance(hosts, Host)
             hosts = [hosts]
@@ -1486,12 +1489,14 @@ class Midget(object):
                     error = None
                     ip = self.get_ip_for_host(host)
                     euca_host = self.eucaconnection.get_host_by_hostname(ip)
-                    # username = self.clc_connect_kwargs.get('username', 'root')
-                    # password = self.clc_connect_kwargs.get('password')
-                    # keypath = self.clc_connect_kwargs.get('keypath')
-                    # ssh = SshConnection(host=ip, username=username,
-                    #                     password=password, keypath=keypath)
-                    ssh = euca_host.ssh
+                    if not euca_host:
+                        username = username or self.clc_connect_kwargs.get('username', 'root')
+                        password = password or self.clc_connect_kwargs.get('password')
+                        keypath = keypath or self.clc_connect_kwargs.get('keypath')
+                        ssh = sshconnection.SshConnection(host=ip, username=username,
+                                                          password=password, keypath=keypath)
+                    else:
+                        ssh = euca_host.ssh
                     self.info("Attempting to {0} host:{1} ({2})".format(status,
                                                                         host.get_name(), ip))
                     ssh.sys('service midolman {0}'.format(status), code=0)
