@@ -350,9 +350,9 @@ class AutoCreds(Eucarc):
         for service_prefix, mapping in aws_to_euca_service_map.iteritems():
             # http://monitoring.h-12.autoqa.qa1.eucalyptus-systems.com:8773/
             if secure:
-                url = "http://"
-            else:
                 url = "https://"
+            else:
+                url = "http://"
             if port:
                 str_port = ":" + str(port)
             else:

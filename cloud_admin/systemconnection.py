@@ -189,7 +189,8 @@ class SystemConnection(ServiceConnection):
         retlist = []
         if instanceid:
             try:
-                reservation = self.ec2_connection.get_all_instances(instance_ids=[instanceid])
+                reservation = self.ec2_connection.get_all_instances(instance_ids=['verbose',
+                                                                                  instanceid])
             except:
                 self.log.error('{0}\nFailed to find instance:"{1}" on system'
                                .format(get_traceback(), instanceid))
