@@ -38,6 +38,7 @@ class SystemConnection(ServiceConnection):
                  boto_debug_level=0,
                  euca_user='admin',
                  euca_account='eucalyptus',
+                 https=True
                  ):
         self.machine_connect_kwargs = {
             'hostname': hostname,
@@ -65,6 +66,7 @@ class SystemConnection(ServiceConnection):
                                aws_secret_key=aws_secret_key,
                                aws_account_name=euca_account,
                                aws_user_name=euca_user,
+                               https=https,
                                logger=self.log,
                                **self.machine_connect_kwargs)
         super(SystemConnection, self).__init__(hostname=hostname,
