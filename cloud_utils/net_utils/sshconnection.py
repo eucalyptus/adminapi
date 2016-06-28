@@ -269,7 +269,7 @@ class SshConnection():
         self.retry = retry
         self.log = logger
         self.verbose = verbose
-        self.sftp = None
+        self._sftp = None
         self.key_files = key_files or []
         if not isinstance(self.key_files, types.ListType):
             self.key_files = str(self.key_files).split(',')
@@ -916,11 +916,28 @@ class SshConnection():
             if chan:
                 chan.close()
 
+    @property
+    def sftp(self):
+        if self._sftp:
+            if self._sftp.sock and not self._sftp.sock.closed:
+                return self._sftp
+        else:
+            self._sftp = self.open_sftp()
+        return self._sftp
+
+    @sftp.setter
+    def sftp(self, sftp):
+        if isinstance(sftp, SFTPifc) or sftp is None:
+            self._sftp = sftp
+        else:
+            raise ValueError('sftp must be of types; None or {0}, got:"{1}/{2}"'
+                             .format(SFTPifc.__class__.__name__, sftp, type(sftp)))
+
     def open_sftp(self, transport=None):
         transport = transport or self.connection._transport
         sftp = SFTPifc.from_transport(transport)
         sftp.debug = self.debug
-        self.sftp = sftp
+        self._sftp = sftp
         return sftp
 
     def close_sftp(self):
