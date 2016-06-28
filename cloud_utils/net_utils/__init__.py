@@ -163,6 +163,33 @@ def is_address_in_network(ip_addr, network):
         mask = (0xffffffff << (32 - int(bits))) & 0xffffffff
         return (ipaddr & mask) == (netaddr & mask)
 
+def get_network_info_for_cidr(network_cidr):
+    ret = {'network_cidr': network_cidr,
+           'netmask': [0, 0, 0, 0],
+           'network': [],
+           'broadcast': [],
+           'max_addrs': 0,
+           'max_subnets': 0}
+    network, cidr = network_cidr.split('/')
+    network = network.split('.')
+    cidr = int(cidr)
+    ret['max_subnets'] = pow(2, 32 - cidr)
+    ret['max_addrs'] = ret['max_subnets']
+    if ret['max_subnets'] > 2:
+        ret['max_addrs'] -= 2
+    for i in range(cidr):
+        ret['netmask'][i / 8] = ret['netmask'][i / 8] + (1 << (7 - i % 8))
+    for i in range(len(network)):
+        ret['network'].append(int(network[i]) & ret['netmask'][i])
+    ret['broadcast'] = list(ret['network'])
+    for i in range(32 - cidr):
+        ret['broadcast'][3 - i / 8] = ret['broadcast'][3 - i / 8] + (1 << (i % 8))
+    for key, value in ret.iteritems():
+        if isinstance(value, list):
+            ret[key] = ".".join(str(x) for x in value)
+    return ret
+
+
 
 def packet_test(sender_ssh, receiver_ssh, protocol, dest_ip=None, src_addrs=None,
                 port=None, src_port=None, bind=False, count=1, interval=.1, payload=None,
