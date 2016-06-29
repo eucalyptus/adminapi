@@ -390,10 +390,11 @@ class NodeControllerHelpers(EucaMachineHelpers):
         self.eucahost.sys('mv {0} {1}'.format(new_file_path, path))
         self.log.debug('Done re-writing {0} on {1}'.format(path, self.eucahost.hostname))
 
-    def get_vncdisplay_port_for_instance(self, instance, verbose=False):
+    def get_vncdisplay_for_instance(self, instance, verbose=False):
         if not isinstance(instance, basestring):
             instance = instance.id
         out = self.eucahost.sys('virsh vncdisplay {0}'.format(instance), verbose=verbose, code=0)
         if out:
-            return out[0].strip()
+            vnc_port = out[0].strip()
+            return "{0}{1}".format(self.eucahost.hostname, vnc_port)
         return None
