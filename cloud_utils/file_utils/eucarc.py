@@ -45,6 +45,8 @@ class Eucarc(object):
 
         self._ec2_url = None
         self._iam_url = None
+        self._sts_url = None
+        self._token_url = None
         self._cloudwatch_url = None
         self._elb_url = None
         self._cloudformation_url = None
@@ -65,7 +67,6 @@ class Eucarc(object):
         self._properties_url = None
 
         self.s3_url = None
-        self.token_url = None
 
         # End of init default eucarc attrs
         if not logger:
@@ -207,6 +208,23 @@ class Eucarc(object):
     @euare_url.setter
     def euare_url(self, url):
         self._iam_url = url
+
+    # STS
+    @property
+    def sts_url(self):
+        return self._sts_url
+
+    @sts_url.setter
+    def sts_url(self, url):
+        self._sts_url = url
+
+    @property
+    def token_url(self):
+        return self._sts_url
+
+    @token_url.setter
+    def token_url(self, url):
+        self._sts_url = url
 
 
     # Cloud Formation

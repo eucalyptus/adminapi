@@ -1239,7 +1239,7 @@ class Machine(object):
     def open_remote_file(self, filepath, mode):
         f = self.ssh.sftp.file(filepath, mode)
         return f
-    
+
     @printinfo
     def dd_monitor(self,
                    ddif=None,
