@@ -7,7 +7,7 @@ from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_utils.log_utils import get_traceback
 from cloud_utils.log_utils import printinfo, markup
 from cloud_utils.file_utils import render_file_template
-from cloud_utils.net_utils import test_port_status
+from cloud_utils.net_utils import test_port_status, get_network_info_for_cidr
 from cloud_utils.net_utils.sshconnection import (
     CommandExitCodeException,
     SshCbReturn,
@@ -366,13 +366,14 @@ class Machine(object):
 
     @property
     def sftp(self):
-        if not self._sftp:
-            self._sftp = self.ssh.connection.open_sftp()
+        if not getattr(self, '_sftp', None):
+            sftp = self.ssh.connection.open_sftp()
+            setattr(self, '_sftp', sftp)
         return self._sftp
 
     @sftp.setter
     def sftp(self, newsftp):
-        self._sftp = newsftp
+        setattr(self, '_sftp', newsftp)
 
     def refresh_ssh(self):
         self.ssh.refresh_connection()
@@ -650,12 +651,19 @@ class Machine(object):
             info_dict['ipcidr'] = None
             info_dict['broadcast'] = None
             info_dict['scope'] = None
+            info_dict['network'] = None
+            info_dict['network_cidr'] = None
             while offset < info_len:
                 word = info[offset]
                 if word == 'inet':
                     offset += 1
                     info_dict['ipcidr'] = info[offset]
-                    info_dict['ip'], info_dict['mask'] = info_dict['ipcidr'].split('/')
+                    info_dict['ip'], mask = info_dict['ipcidr'].split('/')
+                    if info_dict['ipcidr']:
+                        net_info = get_network_info_for_cidr(info_dict['ipcidr']) or {}
+                        info_dict['network'] = net_info.get('network', None)
+                        info_dict['mask'] = net_info.get('netmask')
+                        info_dict['network_cidr'] = "{0}/{1}".format(info_dict['network'], mask)
                 if word == 'brd':
                     offset += 1
                     info_dict['broadcast'] = info[offset]
@@ -679,7 +687,7 @@ class Machine(object):
         pt = PrettyTable(header)
         pt.align = 'l'
         for iface, info in info_dict.iteritems():
-            pt.add_row([iface, info['ipcidr'], info['ip'], info['mask'], info['broadcast'],
+            pt.add_row([iface, info['network_cidr'], info['ip'], info['mask'], info['broadcast'],
                         info['scope']])
         if not printme:
             return pt
@@ -1227,6 +1235,10 @@ class Machine(object):
 
     def get_file_userid(self, path):
         return self.sftp.lstat(path).st_uid
+
+    def open_remote_file(self, filepath, mode):
+        f = self.ssh.sftp.file(filepath, mode)
+        return f
 
     @printinfo
     def dd_monitor(self,

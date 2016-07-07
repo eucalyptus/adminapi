@@ -139,7 +139,8 @@ eucarc_to_service_map = {
     "s3_url": 'objectstorage',
     "aws_iam_url": 'euare',
     "aws_simpleworkflow_url": 'simpleworkflow',
-    "aws_auto_scaling_url": 'autoscaling'}
+    "aws_auto_scaling_url": 'autoscaling',
+    "sts_url": 'sts'}
 
 class ServiceMapping(object):
     """
@@ -154,6 +155,7 @@ class ServiceMapping(object):
     def __repr__(self):
         return "{0}:{1}:".format(self.__class__.__name__, self.aws_name, self.euca_service)
 
+# Mapping of aws, euca, eucarc, and euca2ools names for services
 aws_to_euca_service_map = {
     "ec2": ServiceMapping("ec2", "compute", 'ec2_url', 'ec2-url'),
     "iam": ServiceMapping("iam", "euare", 'euare_url', 'iam-url'),
