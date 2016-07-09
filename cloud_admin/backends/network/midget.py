@@ -646,7 +646,7 @@ class Midget(object):
         buf += self._indent_table_buf(str(pt))
         if showbgp and bgps:
             buf += self._bold("{0}PORT BGP INFO:\n".format(indent), 4)
-            buf += self._indent_table_buf(str(self.show_bgps(port.get_bgps() or [])))
+            buf += self._indent_table_buf(str(self.show_bgps(port.get_bgps() or [], printme=False)))
         if showchains:
             if port.get_inbound_filter_id():
                 in_filter = self.mapi.get_chain(str(port.get_inbound_filter_id()))
@@ -736,6 +736,31 @@ class Midget(object):
             self.info('\n{0}\n'.format(buf))
         else:
             return buf
+
+    def show_bgp_hosts_for_euca_router(self, router_name='eucart', printmethod=None, printme=True):
+        ret_buf = ""
+        router = self.get_router_by_name(router_name)
+        bgp_ports = []
+        for port in router.get_ports():
+            if port.get_bgps():
+                bgp_ports.append(port)
+        bgp_hosts = []
+        for port in bgp_ports:
+            host = self.mapi.get_host(port.get_host_id())
+            if host:
+                bgp_hosts.append(host)
+            else:
+                self.log.error('No host found for port:{0} using host_id:{1}'
+                               .format(port.get_id(), port.get_host_id()))
+            port_table = str(self.show_port_summary(port=port, printme=False))
+            host_table = self.show_hosts(host, printme=False)
+            ret_buf += "\n{0}\n\n{1}\n{2}\n"\
+                .format("#".ljust(len(port_table.splitlines()[0]), "#"), port_table, host_table)
+        if printme:
+            printmethod = printmethod or self.log.info
+            printmethod("\n{0}\n".format(ret_buf))
+        else:
+            return ret_buf
 
     def show_bgps(self, bgps, printme=True):
         buf = ""
@@ -1419,7 +1444,7 @@ class Midget(object):
         if hosts is None:
             hosts = self.mapi.get_hosts(query=None)
         host_name_col = 'HOST NAME'
-        pt = PrettyTable(["HOST ID", host_name_col, "ALIVE", "HOST IP(S)"])
+        pt = PrettyTable(["HOST ID", host_name_col, "ALIVE", "HOST IP(S)", 'TUN ZONE'])
         for host in sorted(hosts, key=lambda host: host.get_name()):
             ip_addrs = 'not resolved'
             try:
@@ -1427,11 +1452,23 @@ class Midget(object):
                 ip_addrs = ", ".join(addresslist)
             except:
                 pass
-            pt.add_row([host.get_id(), host.get_name(), host.dto.get('alive'), ip_addrs])
+            tz = self.get_tunnel_zone_for_host(host)
+            if tz:
+                tz = tz.get_name()
+            pt.add_row([host.get_id(), host.get_name(), host.dto.get('alive'), ip_addrs, tz])
         if printme:
             self.info('\n{0}\n'.format(pt))
         else:
             return pt
+
+    def get_tunnel_zone_for_host(self, host):
+        tzs = self.get_tunnel_zones()
+        for tz in tzs:
+            for thosts in tz.get_hosts():
+                if thosts.get_host_id() == host.get_id():
+                    return tz
+        return None
+
 
     def show_hosts(self, hosts=None, printme=True):
         if hosts and not isinstance(hosts, list):
