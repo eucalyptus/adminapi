@@ -275,10 +275,19 @@ class Machine(object):
         """
         if not self.ssh:
             raise Exception('Need SSH connection to retrieve distribution info from machine')
+        if self.is_file('/etc/os-release'):
+            try:
+                self.distro  = self.sys('. /etc/os-release && echo "$ID"', code=0)
+                self.distro_ver = self.sys('. /etc/os-release && echo "$VERSION_ID"', code=0)
+                return (self.distro, self.distro_ver)
+            except CommandExitCodeException, CE:
+                self.log.warning('Failed to fetch distro info from /etc/os-release, err:"{0}"'
+                                 .format(CE))
+
         try:
             out = self.sys('cat /etc/issue', listformat=False, code=0, verbose=verbose)
         except CommandExitCodeException, CE:
-            self.log.debug('Failed to fetch /etc/issue from machine:"{0}", err:"{1}"'
+            self.log.warning('Failed to fetch /etc/issue from machine:"{0}", err:"{1}"'
                            .format(self.hostname, str(CE)))
             out = None
         if out:
