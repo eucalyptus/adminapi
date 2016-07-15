@@ -20,15 +20,19 @@ from cloud_admin.systemconnection import SystemConnection
 from boto.ec2.group import Group as BotoGroup
 from boto.ec2.instance import Instance
 from boto.ec2.securitygroup import SecurityGroup, IPPermissions
-from prettytable import PrettyTable
-from json import loads as json_loads
+from ConfigParser import ConfigParser, NoOptionError, NoSectionError
 from httplib import CannotSendRequest
+from io import StringIO
+from json import loads as json_loads
+from kazoo.client import KazooClient
+from prettytable import PrettyTable
 import json
 import socket
 import time
 import urllib
 import re
 import copy
+
 
 
 class ArpTable(resource_base.ResourceBase):
@@ -93,6 +97,7 @@ class Midget(object):
         self.midonet_api_port = midonet_api_port
         self.midonet_username = midonet_username
         self.midonet_password = midonet_password
+        self._host_connections = {}
 
         self.log = Eulogger(identifier='MidoDebug:{0}'.format(self.midonet_api_host),
                             stdout_level=mido_log_level,
@@ -210,6 +215,44 @@ class Midget(object):
                                                      query, headers, error))
             raise error
         return response, from_json(content)
+
+    def mido_cli_cmd(self, cmd, ssh=None, midonet_url='http://127.0.0.1:8080/midonet-api',
+                     listformat=True, verbose=True, no_auth=True, username=None, password=None,
+                     tenant=None):
+        """
+        Attempts to execute a midocli command on a remote ssh connected machine and
+        return the results
+
+        :return:
+        :param cmd: a string representing the command to feed to midocli
+        :param ssh: a adminapi net_utils.sshconnection object
+        :param midonet_url: url to be fed to midocli
+        :param no_auth: if true will pass no_auth flag to midonet
+        :param verbose: bool, set verbose flag for underlying ssh sys command
+        :param listformat: bool, if true returns list of lines else a single string buffer
+        :param username: username for midonet auth
+        :param password: password for midonnet auth
+        :param tenant: midonet tenantid, uuid
+        :return: output from command
+        """
+        try:
+            ssh = ssh or self.eucaconnection.clc_machine.ssh
+        except:
+            raise ValueError('sshconnection object was not provided and not found in the'
+                             'local eucaconnection object')
+        command_prefix = 'midonet-cli --midonet-url={0} '.format(midonet_url)
+        if no_auth:
+            command_prefix += ' --no-auth '
+        if username:
+            command_prefix += ' --user={0} '.format(username)
+        if password:
+            command_prefix += ' --password={0} '.format(password)
+        if tenant:
+            command_prefix += ' --tenant={0} '.format(tenant)
+
+        cmd = command_prefix + str(cmd)
+        return ssh.sys(cmd=cmd, listformat=listformat, verbose=verbose)
+
 
     def _indent_table_buf(self, table, indent=None):
         """
@@ -1496,8 +1539,9 @@ class Midget(object):
             return buf
 
     def get_ip_for_host(self, host):
-        assert isinstance(host, Host)
-        name, aliaslist, addresslist = socket.gethostbyaddr(host.get_name())
+        if isinstance(host, Host):
+            host = host.get_name()
+        name, aliaslist, addresslist = socket.gethostbyaddr(host)
         if addresslist:
             return addresslist[0]
         return None
@@ -1515,36 +1559,41 @@ class Midget(object):
             hosts = [hosts]
         result = {}
         failed = False
+
         if hosts is None:
-            hosts = self.mapi.get_hosts(query=None) or []
-        self.info('Attetmpting to stop all hosts first...')
-        self.info('Restarting hosts: {0}'.format(",".join(str(x.get_name()) for x in hosts)))
+            try:
+                hosts = self.get_midolman_hosts_from_zk()
+            except Exception as E:
+                self.log.error('Failed to fetch hosts from zookeeper, err: {0}'.format(E))
+                api_hosts = self.mapi.get_hosts(query=None) or []
+                hosts = []
+                for host in api_hosts:
+                    hosts.append(host.get_name())
+        if not hosts:
+            raise ValueError('No hosts provided or found from zookeeper or mido api?')
+        self.info('Attempting to stop all hosts first...')
+        self.info('Restarting hosts: {0}'.format(",".join(hosts)))
         for status in ['stop', 'start']:
             for host in hosts:
+                ip = "None"
                 try:
                     success = True
                     error = None
                     ip = self.get_ip_for_host(host)
-                    euca_host = self.eucaconnection.get_host_by_hostname(ip)
-                    if not euca_host:
-                        username = username or self.clc_connect_kwargs.get('username', 'root')
-                        password = password or self.clc_connect_kwargs.get('password')
-                        keypath = keypath or self.clc_connect_kwargs.get('keypath')
-                        ssh = sshconnection.SshConnection(host=ip, username=username,
-                                                          password=password, keypath=keypath)
-                    else:
-                        ssh = euca_host.ssh
+                    ssh = self.get_host_ssh(host, username=username, password=password,
+                                            keypath=keypath)
                     self.info("Attempting to {0} host:{1} ({2})".format(status,
-                                                                        host.get_name(), ip))
+                                                                        host, ip))
                     ssh.sys('service midolman {0}'.format(status), code=0)
                     time.sleep(1)
                 except Exception as SE:
+                    self.log.warning('\n{0}\n'.format(get_traceback()))
                     failed = True
                     success = False
                     error = str(SE)
-                    self.log.warning('{0}, midolman service failed to:{1}. Err:"{2}"'
-                                     .format(host.get_name(), status, str(SE)))
-                result[host.get_name()] = {'action': status, 'success':success, 'error': error}
+                    self.log.warning('{0}({1}), midolman service failed to:{2}. Err:"{3}"'
+                                     .format(host, ip, status, str(SE)))
+                result[host] = {'action': status, 'success':success, 'error': error}
 
         if failed:
             errors = 'Errors while reseting midolman on hosts:\n'
@@ -1556,6 +1605,32 @@ class Midget(object):
         else:
             self.info('Done restarting midolman on hosts')
         return result
+
+    def get_host_ssh(self, host, username=None, password=None, keypath=None):
+        if isinstance(host, Host):
+            host = host.get_name()
+            if not host:
+                raise RuntimeError('host.get_name() did not return a name?')
+        if not isinstance(host, basestring):
+            raise ValueError('Unkown type for host: "{0}/{1}"'.format(host, type(host)))
+        ip = self.get_ip_for_host(host)
+        for host, info in self._host_connections.iteritems():
+            if host == host or (ip and info.get('ip') == ip):
+                return info.get('ssh')
+        try:
+            euca_host = self.eucaconnection.get_host_by_hostname(ip)
+        except Exception as E:
+            self.log.warning('Error fetching host from eucahost: {0}'.format(E))
+        if not euca_host:
+            username = username or self.eucaconnection.clc_machine.ssh.username
+            password = password or self.eucaconnection.clc_machine.ssh.password
+            keypath = keypath or self.eucaconnection.clc_machine.ssh.keypath
+            ssh = sshconnection.SshConnection(host=ip, username=username,
+                                              password=password, keypath=keypath)
+        else:
+            ssh = euca_host.ssh
+        self._host_connections[host] = {'ip': ip, 'ssh': ssh}
+        return ssh
 
     def show_host_ports(self, host, printme=True):
         '''
@@ -1849,3 +1924,162 @@ class Midget(object):
         except KeyError:
             raise KeyError('get_euca_vpc_gateway_host_addrs: VPC cloud config not found '
                            'in euca property "network_configuration"')
+
+    def set_bgp_for_peer_via_cli(self, router_name, port_ip, local_as, remote_as, peer_address, route):
+        pass
+
+
+    def get_zookeeper_hosts(self, ssh=None, mido_conf='/etc/midolman/midolman.conf',
+                            key='zookeeper_hosts'):
+        pass
+
+
+    def show_midolman_config_dict(self, config_dict, section=None, printmethod=None, printme=True):
+        table_width = 100
+        key_len = 24
+        val_len = table_width - key_len - 3
+        buf = ""
+        for section_name, opt_dict in config_dict.iteritems():
+            if section and section_name != section:
+                continue
+            else:
+                buf += markup("\n{0}\n".format(section_name),
+                              [TextStyle.BOLD, TextStyle.UNDERLINE,
+                               ForegroundColor.WHITE, BackGroundColor.BG_BLUE])
+                pt = PrettyTable(['key', 'value'])
+                pt.max_width['key'] = key_len
+                pt.max_width['value'] = val_len
+                pt.align = 'l'
+                pt.border = False
+                pt.header = False
+                for key, val in opt_dict.iteritems():
+                    pt.add_row([str(key).ljust(key_len), str(val).ljust(val_len)])
+                buf += "{0}\n".format(pt)
+        if printme:
+            printmethod = printmethod or self.log.info
+            printmethod(buf)
+        else:
+            return buf
+
+    def show_config_for_hosts(self, hosts=None, path='/etc/midolman.conf', username=None,
+                              password=None, keypath=None, printmethod=None):
+        printmethod = printmethod or self.log.info
+        if not hosts:
+            try:
+                hosts = self.get_midolman_hosts_from_zk()
+            except Exception as E:
+                self.log.warning('Failed to fetch midolman hosts from zk: {0}'.format(E))
+                try:
+                    hosts = self.mapi.get_hosts()
+                except Exception as E:
+                    self.log.warning('Failed to fetch hosts from Midolman api: {0}'.format(E))
+        if not hosts:
+            raise ValueError('No hosts were provided, and none could be found')
+        if not isinstance(hosts, list):
+            hosts = [hosts]
+        buf = "\n"
+        for host in hosts:
+            if isinstance(host, Host):
+                host = host.get_name()
+            ssh = self.get_host_ssh(host, username=username, password=password, keypath=keypath)
+            config = self.get_midolman_conf(ssh=ssh)
+            buf += "-".ljust(80, "-")
+            buf += markup('\n\nHOST: {0}\nIP: {1}\nPATH: {2}\n'.format(host, ssh.host, path),
+                         [TextStyle.BOLD, BackGroundColor.BG_BLACK,
+                          ForegroundColor.WHITE])
+            buf += self.show_midolman_config_dict(config, printme=False)
+        printmethod(buf)
+
+    def get_midolman_conf(self, ssh=None, mido_conf='/etc/midolman/midolman.conf', verbose=True):
+        ssh = ssh or self.eucaconnection.clc_machine.ssh
+        buf = ""
+        start = False
+        config_dict = {}
+        for line in ssh.sys('cat {0}'.format(mido_conf), code=0, listformat=True, verbose=verbose):
+            if verbose:
+                self.log.debug(line)
+            if re.search("^\[*.*\]\s*$", line):
+                start = True
+            if start:
+                buf += line + "\n"
+        if buf:
+            sio = StringIO(unicode(buf))
+            try:
+                config = ConfigParser()
+                config.readfp(sio)
+            finally:
+                if sio:
+                    sio.close()
+            for section in config.sections():
+                config_dict[section] = dict(config.items(section))
+        else:
+            self.log.warning('Midonet Config buffer empty')
+        return config_dict
+
+    def get_zk_hosts_from_config(self, mido_config=None):
+        mido_config = mido_config or self.get_midolman_conf()
+        # Get the zookeeper section from a midolman.conf dictionary
+        zk_section = mido_config.get('zookeeper')
+        zk_hosts_string = zk_section.get('zookeeper_hosts', None)
+        hosts = []
+        if not zk_hosts_string:
+            self.log.warn('No zookeeper_hosts option found in mido config dictionary')
+        else:
+            hosts = zk_hosts_string.split(',')
+        return hosts
+
+
+    def show_zk_hosts(self, hosts=None, printmethod=None, printme=True):
+        hosts = hosts or self.get_zk_hosts_from_config()
+        pt = PrettyTable(['HOST', 'PORT', 'STATUS(is ok?)'])
+        for host in hosts:
+            status = None
+            try:
+                client = KazooClient(host)
+                client.start()
+            except Exception as E:
+                status = 'Error creating and starting zookeeper client ' \
+                         'for host: "{0}", err:"{1}"'.format(host, E)
+
+            host, port = client.hosts[0]
+            if not status:
+                status = client.command('ruok')
+            pt.add_row([host, port, status])
+        if printme:
+            printmethod = printmethod or self.log.info
+            printmethod("\n{0}\n".format(pt))
+        else:
+            return pt
+
+    def get_zk_kazoo_client(self, hosts=None):
+        if not hosts:
+            hosts = self.get_zk_hosts_from_config()
+            if not hosts:
+                raise ValueError('No zookeeper hosts provided and none found?')
+            hosts = ", ".join(hosts)
+        client = KazooClient(hosts)
+        self.log.debug('Attempting to start zk client with hosts:"{0}"'.format(hosts))
+        client.start()
+        return client
+
+    def get_midolman_hosts_from_zk(self):
+        zk = self.get_zk_kazoo_client()
+        hostnames = []
+        host_ids = zk.get_children('/midonet/v1/hosts/') or []
+        for id in host_ids:
+            data_str, znodstat = zk.get('/midonet/v1/hosts/' + id)
+            if data_str:
+                data = json.loads(data_str)
+                if data:
+                    data = data.get('data', {})
+                    hostname = data.get('name' or None)
+                    if hostname:
+                        hostnames.append(hostname)
+        return hostnames
+
+
+
+
+
+
+
