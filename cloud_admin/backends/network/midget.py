@@ -1606,7 +1606,7 @@ class Midget(object):
             self.info('Done restarting midolman on hosts')
         return result
 
-    def get_host_ssh(self, host, username=None, password=None, keypath=None):
+    def get_host_ssh(self, host, username=None, password=None, keypath=None, timeout=10):
         if isinstance(host, Host):
             host = host.get_name()
             if not host:
@@ -1626,7 +1626,8 @@ class Midget(object):
             password = password or self.eucaconnection.clc_machine.ssh.password
             keypath = keypath or self.eucaconnection.clc_machine.ssh.keypath
             ssh = sshconnection.SshConnection(host=ip, username=username,
-                                              password=password, keypath=keypath)
+                                              password=password, keypath=keypath, timeout=timeout,
+                                              banner_timeout=10)
         else:
             ssh = euca_host.ssh
         self._host_connections[host] = {'ip': ip, 'ssh': ssh}
@@ -1926,13 +1927,7 @@ class Midget(object):
                            'in euca property "network_configuration"')
 
     def set_bgp_for_peer_via_cli(self, router_name, port_ip, local_as, remote_as, peer_address, route):
-        pass
-
-
-    def get_zookeeper_hosts(self, ssh=None, mido_conf='/etc/midolman/midolman.conf',
-                            key='zookeeper_hosts'):
-        pass
-
+        raise NotImplementedError('Not implemented yet')
 
     def show_midolman_config_dict(self, config_dict, section=None, printmethod=None, printme=True):
         table_width = 100
@@ -1961,8 +1956,8 @@ class Midget(object):
         else:
             return buf
 
-    def show_config_for_hosts(self, hosts=None, path='/etc/midolman.conf', username=None,
-                              password=None, keypath=None, printmethod=None):
+    def show_mido_conf_for_hosts(self, hosts=None, path='/etc/midolman.conf', username=None,
+                              password=None, keypath=None, sshtimeout=10, printmethod=None):
         printmethod = printmethod or self.log.info
         if not hosts:
             try:
@@ -1979,15 +1974,26 @@ class Midget(object):
             hosts = [hosts]
         buf = "\n"
         for host in hosts:
-            if isinstance(host, Host):
-                host = host.get_name()
-            ssh = self.get_host_ssh(host, username=username, password=password, keypath=keypath)
-            config = self.get_midolman_conf(ssh=ssh)
+            ssh_host = None
+            error = None
+            try:
+                if isinstance(host, Host):
+                    host = host.get_name()
+                ssh = self.get_host_ssh(host, username=username, password=password,
+                                        keypath=keypath, timeout=sshtimeout)
+                ssh_host = ssh.host
+                config = self.get_midolman_conf(ssh=ssh)
+            except Exception as E:
+                error = markup('ERROR fetching config:"{0}"\n'.format(E),
+                               [BackGroundColor.BG_WHITE, ForegroundColor.RED])
             buf += "-".ljust(80, "-")
-            buf += markup('\n\nHOST: {0}\nIP: {1}\nPATH: {2}\n'.format(host, ssh.host, path),
+            buf += markup('\n\nHOST: {0}\nIP: {1}\nPATH: {2}\n'.format(host, ssh_host, path),
                          [TextStyle.BOLD, BackGroundColor.BG_BLACK,
                           ForegroundColor.WHITE])
-            buf += self.show_midolman_config_dict(config, printme=False)
+            if error:
+                buf += error
+            else:
+                buf += self.show_midolman_config_dict(config, printme=False)
         printmethod(buf)
 
     def get_midolman_conf(self, ssh=None, mido_conf='/etc/midolman/midolman.conf', verbose=True):
@@ -2051,7 +2057,7 @@ class Midget(object):
         else:
             return pt
 
-    def get_zk_kazoo_client(self, hosts=None):
+    def get_zk_client(self, hosts=None):
         if not hosts:
             hosts = self.get_zk_hosts_from_config()
             if not hosts:
@@ -2063,7 +2069,7 @@ class Midget(object):
         return client
 
     def get_midolman_hosts_from_zk(self):
-        zk = self.get_zk_kazoo_client()
+        zk = self.get_zk_client()
         hostnames = []
         host_ids = zk.get_children('/midonet/v1/hosts/') or []
         for id in host_ids:
