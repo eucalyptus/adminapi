@@ -326,7 +326,7 @@ class AutoCreds(Eucarc):
         gathered via the Eucalyptus admin api interface
         :returns dict mapping eucarc common key-values to the discovered service URIs.
         """
-        if not self.serviceconnection and not self.region_domain:
+        if not self.serviceconnection and self.region_domain:
             raise RuntimeError('Can not fetch service paths from cloud without a "region_domain"'
                                'and/or a ServiceConnection\n A ServiceConnection requires: '
                                'clc_ip, or aws_access_key + aws_secret_key and bootstrap endpoint')
@@ -334,8 +334,11 @@ class AutoCreds(Eucarc):
             path_dict = self._get_service_paths_from_domain(domain=self.region_domain,
                                                             port=self.service_port,
                                                             secure=self.is_https)
+        elif self.region_domain is not None:
+            path_dict = self._get_service_paths_from_service_host_urls(self.serviceconnection)
         else:
-            path_dict = self._get_service_paths_from_serviceconnection(self.serviceconnection)
+            path_dict = self._get_service_paths_from_serviceconnection(self.serviceconnection,
+                                                                       logger=self.log)
         if not path_dict.get('ec2_access_key'):
             path_dict['ec2_access_key'] = self.aws_access_key
         if not path_dict.get('ec2_secret_key'):
@@ -364,29 +367,45 @@ class AutoCreds(Eucarc):
         return ret_dict
 
     @classmethod
-    def _get_service_paths_from_serviceconnection(cls, serviceconnection, secure=False):
+    def _get_service_paths_from_serviceconnection(cls, serviceconnection, try_domain=True,
+                                                  secure=False, logger=None):
         """
         Reads the Eucalyptus services, maps them to common eucarc key values, and returns
         the dict of the mapping.
         :params serviceconnection: an ServiceConnection obj w/ active connection.
         :returns dict mapping eucarc common key-values to the discovered service URIs.
         """
-        assert isinstance(serviceconnection, ServiceConnection)
+        if not isinstance(serviceconnection, ServiceConnection):
+            raise ValueError('Unknown type for service connection, got: "{0}/{1}"'
+                             .format(serviceconnection, type(serviceconnection)))
+        if try_domain:
+            try:
+                domain_prop = serviceconnection.get_property('system.dns.dnsdomain')
+                domain = domain_prop.value
+                port_prop = serviceconnection.get_property('bootstrap.webservices.port')
+                port = port_prop.value
+                return cls._get_service_paths_from_domain(domain=domain, port=port, secure=secure)
+            except Exception as DE:
+                if logger:
+                    logger.warn('Could not fetch domain and port info from service '
+                                'connection, err: "{0}"'.format(DE))
+        return cls._get_service_paths_from_service_host_urls(serviceconnection)
+
+    @classmethod
+    def _get_service_paths_from_service_host_urls(cls, serviceconnection):
+        if not isinstance(serviceconnection, ServiceConnection):
+            raise ValueError('Unknown type for service connection, got: "{0}/{1}"'
+                             .format(serviceconnection, type(serviceconnection)))
         services = serviceconnection.get_services()
         ret_dict = {}
-        try:
-            domain_prop = serviceconnection.get_property('system.dns.dnsdomain')
-            domain = domain_prop.value
-            port_prop = serviceconnection.get_property('bootstrap.webservices.port')
-            port = port_prop.value
-            return cls._get_service_paths_from_domain(domain=domain, port=port, secure=secure)
-        except Exception as DE:
-            print
-            for service in services:
-                for service_name, mapping in aws_to_euca_service_map.iteritems():
-                    if service.type == mapping.euca_service:
-                        ret_dict[mapping.eucarc] = str(service.uri)
+        for service in services:
+            for service_name, mapping in aws_to_euca_service_map.iteritems():
+                if service.type == mapping.euca_service:
+                    ret_dict[mapping.eucarc] = str(service.uri)
         return ret_dict
+
+
+
 
     def get_local_eucarc(self, credpath):
         """
