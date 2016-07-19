@@ -1929,7 +1929,7 @@ class Midget(object):
     def set_bgp_for_peer_via_cli(self, router_name, port_ip, local_as, remote_as, peer_address, route):
         raise NotImplementedError('Not implemented yet')
 
-    def show_midolman_config_dict(self, config_dict, section=None, printmethod=None, printme=True):
+    def _show_midolman_config_dict(self, config_dict, section=None, printmethod=None, printme=True):
         table_width = 100
         key_len = 24
         val_len = table_width - key_len - 3
@@ -1993,7 +1993,7 @@ class Midget(object):
             if error:
                 buf += error
             else:
-                buf += self.show_midolman_config_dict(config, printme=False)
+                buf += self._show_midolman_config_dict(config, printme=False)
         printmethod(buf)
 
     def get_midolman_conf(self, ssh=None, mido_conf='/etc/midolman/midolman.conf', verbose=True):
@@ -2082,6 +2082,25 @@ class Midget(object):
                     if hostname:
                         hostnames.append(hostname)
         return hostnames
+
+    def get_midolman_config_from_zk(self, nodes=None):
+        nodes = nodes or ['nsdb', 'cluster', 'agent']
+        if not isinstance(nodes, list):
+            nodes = [nodes]
+        zk = self.get_zk_client()
+        buf = ""
+        for node in nodes:
+            conf =  zk.get('/midonet/v1/config/schemas/{0}'.format(node))
+            if conf:
+                buf += conf[0]
+        return buf
+
+    def show_midolman_bundled_zk_config(self, nodes=None, printmethod=None):
+        printmethod = printmethod or self.log.info
+        printmethod("\n{0}\n".format(self.get_midolman_config_from_zk(nodes=nodes)))
+
+
+
 
 
 

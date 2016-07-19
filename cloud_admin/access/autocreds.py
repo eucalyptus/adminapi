@@ -129,6 +129,7 @@ from cloud_utils.net_utils.sshconnection import CommandExitCodeException
 from cloud_admin.hosts.eucahost import EucaHost
 
 
+
 eucarc_to_service_map = {
     "euare_url": 'euare',
     "ec2_url": 'compute',
@@ -217,6 +218,9 @@ class AutoCreds(Eucarc):
         self._has_existing_cert = existing_certs
         self.aws_secret_key = aws_secret_key
         self.aws_access_key = aws_access_key
+        if region_domain is not None:
+            if not re.search("\w", region_domain):
+                region_domain = ""
         self._region_domain = region_domain
         self._service_port = service_port
         self._https = https
@@ -257,7 +261,7 @@ class AutoCreds(Eucarc):
     @property
     def region_domain(self):
         if self._region_domain is None and self.serviceconnection:
-            self.log.debug('Attempting to fetching service domain from property')
+            self.log.debug('Attempting to fetch service domain from property')
             domain_prop = self.serviceconnection.get_property('system.dns.dnsdomain')
             self.log.debug('Got service domain: {0}'.format(domain_prop.value))
             domain = domain_prop.value

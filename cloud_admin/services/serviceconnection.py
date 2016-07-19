@@ -246,7 +246,13 @@ class ServiceConnection(AWSQueryConnection):
         access_key = access_key or self.aws_access_key_id
         secret_key = secret_key or self.aws_secret_access_key
         ec2_region = RegionInfo()
-        ec2_region.name = 'eucalyptus'
+        try:
+            region_prop = self.get_property('system.dns.dnsdomain')
+            ec2_region.name = region_prop.value
+        except Exception as RE:
+            self.log.warning('Failed to fetch dns domain to use as cloud region. Err:"{0}"'
+                             .format(RE))
+            ec2_region.name = 'eucalyptus'
         host = endpoint
         if not endpoint:
             try:
