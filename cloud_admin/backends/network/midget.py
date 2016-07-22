@@ -16,6 +16,7 @@ from cloud_utils.net_utils import is_address_in_network, sshconnection
 from cloud_utils.log_utils import markup, get_traceback
 from cloud_utils.log_utils import BackGroundColor, TextStyle, ForegroundColor
 from cloud_utils.log_utils.eulogger import Eulogger
+from cloud_utils.system_utils.machine import Machine
 from cloud_admin.systemconnection import SystemConnection
 from boto.ec2.group import Group as BotoGroup
 from boto.ec2.instance import Instance
@@ -1582,6 +1583,15 @@ class Midget(object):
                     ip = self.get_ip_for_host(host)
                     ssh = self.get_host_ssh(host, username=username, password=password,
                                             keypath=keypath)
+                    try:
+                        machine = Machine(ssh.host, sshconnection=ssh)
+                        if (machine.distro[0] in ['rhel', 'centos']) and \
+                            (int(machine.distro_ver[0]) > 6):
+                            machine.sys('systemctl restart midolman')
+                            continue
+                    except Exception as SE:
+                        self.log.warn('systemctl failed on host:"{0}", err:{1}\n'
+                                      'Trying init.d now...'.format(host, SE))
                     self.info("Attempting to {0} host:{1} ({2})".format(status,
                                                                         host, ip))
                     ssh.sys('service midolman {0}'.format(status), code=0)
@@ -1911,20 +1921,28 @@ class Midget(object):
         self.show_hosts(hosts=hosts)
 
     def get_euca_vpc_gateway_info(self):
+        midocfg = self.get_euca_mido_config()
+        gatewayhost = midocfg.get('GatewayHost', None)
+        if gatewayhost:
+            gw = {'GatewayHost': gatewayhost}
+            gw['GatewayIP'] = midocfg.get('GatewayIP', None)
+            gw['GatewayInterface'] = midocfg.get('GatewayInterface', None)
+            return [gw]
+        return midocfg.get('Gateways', {})
+
+
+    def get_euca_mido_config(self):
         propname = 'cloud.network.network_configuration'
         prop = self.eucaconnection.get_property(property=propname)
         if not prop:
             raise ValueError('Euca Property not found: {0}'.format(propname))
         value = json_loads(prop.value)
-        try:
-            midocfg = value.get('Mido', {})
-            if not midocfg:
-                self.log.warning("Mido config section not found in euca nework_configuration "
-                                 "property")
-            return midocfg.get('Gateways', {})
-        except KeyError:
-            raise KeyError('get_euca_vpc_gateway_host_addrs: VPC cloud config not found '
-                           'in euca property "network_configuration"')
+        mido_config = value.get('Mido', {})
+        if not mido_config:
+            self.log.warning("Mido config section not found in euca nework_configuration "
+                             "property")
+        return mido_config
+
 
     def set_bgp_for_peer_via_cli(self, router_name, port_ip, local_as, remote_as, peer_address, route):
         raise NotImplementedError('Not implemented yet')

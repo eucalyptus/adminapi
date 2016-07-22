@@ -272,10 +272,7 @@ class NodeControllerHelpers(EucaMachineHelpers):
         return mpath_dev_info
 
     def get_instance_multipath_dev_for_instance_ebs_volume(self, instance, volume):
-        if not isinstance(instance, types.StringTypes):
-            instance = instance.id
-        if isinstance(volume, types.StringTypes):
-            volume = self.tester.get_volume(volume_id=volume)
+        raise NotImplementedError('This method is incomplete at this time')
 
     def get_instance_multipath_dev_for_instance_block_dev(self, instance, ebs_block_dev,
                                                           verbose=False):
@@ -326,33 +323,33 @@ class NodeControllerHelpers(EucaMachineHelpers):
 
     def get_instance_console_path(self, instance_id):
         if not isinstance(instance_id, types.StringTypes):
-            instance = instance_id.id
+            instance_id = instance_id.id
         dev_dom = self.get_instance_device_xml_dom(instance_id=instance_id)
         console_dom = dev_dom.getElementsByTagName('console')[0]
         return console_dom.getElementsByTagName('source')[0].attributes.get('path').nodeValue
 
     def get_instance_device_xml_dom(self, instance_id):
         if not isinstance(instance_id, types.StringTypes):
-            instance = instance_id.id
+            instance_id = instance_id.id
         dom = self.get_instance_xml_dom(instance_id)
         return dom.getElementsByTagName('devices')[0]
 
     def get_instance_block_disk_xml_dom_list(self, instance_id):
         if not isinstance(instance_id, types.StringTypes):
-            instance = instance_id.id
+            instance_id = instance_id.id
         dev_dom = self.get_instance_xml_dom(instance_id)
         return dev_dom.getElementsByTagName('disk')
 
     def get_instance_xml_dom(self, instance_id):
         if not isinstance(instance_id, types.StringTypes):
-            instance = instance_id.id
+            instance_id = instance_id.id
         output = self.get_instance_xml_text(instance_id)
         dom_xml = parseString(output)
         return dom_xml.getElementsByTagName('domain')[0]
 
     def get_instance_xml_text(self, instance_id):
         if not isinstance(instance_id, types.StringTypes):
-            instance = instance_id.id
+            instance_id = instance_id.id
         return self.eucahost.sys('virsh dumpxml ' + str(instance_id), listformat=False,
                                  verbose=False, code=0)
 
