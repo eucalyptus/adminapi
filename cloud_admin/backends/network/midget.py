@@ -144,7 +144,7 @@ class Midget(object):
         self.log.parent.level = level
 
     def tunneled_request(self, uri, method, body=None, query=None, headers=None,
-                         ssh_host=None, depth=0, max_redirects=5):
+                         ssh_host=None, depth=0, max_redirects=5, *args, **kwargs):
         """Process a http rest request with input and output json strings.
 
         Sends json string serialized from body to uri with verb method and returns
