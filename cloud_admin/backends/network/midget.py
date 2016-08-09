@@ -13,7 +13,7 @@ from midonetclient.host_interface_port import HostInterfacePort
 from midonetclient.host_interface import HostInterface
 from midonetclient.ip_addr_group import IpAddrGroup
 from cloud_utils.net_utils import is_address_in_network, sshconnection
-from cloud_utils.log_utils import markup, get_traceback
+from cloud_utils.log_utils import markup, get_traceback, red
 from cloud_utils.log_utils import BackGroundColor, TextStyle, ForegroundColor
 from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_utils.system_utils.machine import Machine
@@ -78,7 +78,7 @@ class Midget(object):
     def __init__(self, midonet_api_host, midonet_api_port='8080', midonet_username=None,
                  midonet_password=None, clc_ip=None, clc_password=None, systemconnection=None,
                  clc_tunnel=True, clc_tunnel_host='127.0.0.1', mido_log_level='INFO',
-                 euca_log_level='INFO'):
+                euca_log_level='INFO'):
         """
 
         :param midonet_api_host: IP/hostname of machine serving midonet api
@@ -119,6 +119,7 @@ class Midget(object):
         self.default_indent = ""
         self._euca_instances = {}
         self._protocols = {}
+        self._api_version_cache = {}
 
     def debug(self, msg):
         self.log.debug(msg)
@@ -144,7 +145,9 @@ class Midget(object):
         self.log.parent.level = level
 
     def tunneled_request(self, uri, method, body=None, query=None, headers=None,
-                         ssh_host=None, depth=0, max_redirects=5, *args, **kwargs):
+                         ssh_host=None, depth=0, max_redirects=5, mido_json_ver=None,
+                         mido_api_request_type = None,
+                         *args, **kwargs):
         """Process a http rest request with input and output json strings.
 
         Sends json string serialized from body to uri with verb method and returns
@@ -159,6 +162,45 @@ class Midget(object):
         :param max_redirects: max amount of redirects allowed for this request
         :return: (http response obj, data as json).
         """
+
+        # Try to find an acceptable json version for the api request...
+        # First see if this type of request has already been successful or not with a previous
+        # version in a request...
+        trying_version = None
+        original_version = None
+        header_key = None
+        header_value = None
+        # See if this contains the 'Accept' header...
+        if isinstance(headers, dict):
+            for header_key, header_value in headers.iteritems():
+                if str(header_key).lower() == 'accept':
+                    break
+        if header_value:
+            # If the mido request type string wasn't provided, find it in the uri and header...
+            # Example: "BRIDGES.PORT"
+            if not mido_api_request_type:
+                # Use the request and header request types for future caching...
+                uri_match = re.search(r"(http.*midonet-api)/(\w+)/*(.*$)", uri)
+                if uri_match:
+                    uri_type = uri_match.groups()[1]
+                    h_match = re.search(r'\.(\w+)-v\d\+json$', header_value)
+                    if h_match:
+                        header_type = h_match.groups()[0]
+                        mido_api_request_type = "{0}.{1}".format(uri_type, header_type).upper()
+
+            if mido_api_request_type:
+                # if the version wasn't supplied in the request, see if it's cached already...
+                if mido_json_ver is None:
+                    mido_json_ver = self._api_version_cache.get(mido_api_request_type, None)
+                match = re.search('v(\d)\+json$', header_value)
+                if match:
+                    original_version = match.groups()[0]
+                    trying_version = original_version
+                    if mido_json_ver is not None and mido_json_ver != original_version:
+                        new_string = header_value.replace("v{0}+json".format(original_version),
+                                                   "v{0}+json".format(mido_json_ver))
+                        headers[header_key] = new_string
+                        trying_version = mido_json_ver
         if depth > max_redirects:
             raise ValueError('Request detph:{0} has exceed max_redirects:{1}, uri:{2}'
                              .format(depth, max_redirects, uri))
@@ -177,6 +219,9 @@ class Midget(object):
         self.log.debug("tunneled request: uri=%s, method=%s" % (uri, method))
         self.log.debug("tunneled request: body=%s" % body)
         self.log.debug("tunneled request: headers=%s" % headers)
+        self.log.debug("tunneled request:mido_request_type:{0}, original ver:{1}, "
+                       "trying ver:{2}"
+                       .format(mido_api_request_type, original_version, trying_version))
         if query:
             uri += '?' + urllib.urlencode(query)
         data = json.dumps(body) if body is not None else '{}'
@@ -212,9 +257,25 @@ class Midget(object):
                 error = RuntimeError
             self.log.error("Got http error(response=%r, content=%r) for "
                            "request(uri=%r, method=%r, body=%r, query=%r,headers=%r). "
-                           "Raising exception=%r" % (response, content, uri, method, body,
+                           "Exception type=%r" % (response, content, uri, method, body,
                                                      query, headers, error))
+            if int(status) == 406:
+                if trying_version and trying_version > 0:
+                    new_version = int(trying_version) - 1
+                    self.log.error(red('ErrorCode:406.  Request type:{0}, Current Ver:{1}, '
+                                       'Retrying with version:{2}'.format(mido_api_request_type,
+                                                                          trying_version,
+                                                                          new_version)))
+                    return self.tunneled_request(uri=uri, method=method,
+                                                 body=body, query=query, headers=headers,
+                                                 ssh_host=ssh_host, depth=depth,
+                                                 max_redirects=max_redirects,
+                                                 mido_api_request_type=mido_api_request_type,
+                                                 mido_json_ver=new_version)
             raise error
+        # Request was valid store the api version for future requests...
+        if trying_version:
+            self._api_version_cache[mido_api_request_type] = trying_version
         return response, from_json(content)
 
     def mido_cli_cmd(self, cmd, ssh=None, midonet_url='http://127.0.0.1:8080/midonet-api',
@@ -656,6 +717,20 @@ class Midget(object):
                              'fix the assumptions made in this method!')
         return bridge
 
+    def get_bgps_for_port(self, port):
+        bgps = []
+        if hasattr(port, 'get_bgps'):
+            bgps = port.get_bgps()
+        else:
+            header = (getattr(vendor_media_type,
+                              'APPLICATION_BGP_COLLECTION_JSON', None) or
+                      "application/vnd.org.midonet.collection.Bgp-v1+json")
+            bgps = port.auth.do_request(headers={'Accept': header},
+                                        method='GET',
+                                        uri=port.dto.get('bgps'))
+        return bgps
+
+
     def show_port_summary(self, port, showchains=True, showbgp=True, indent=None, printme=True):
         if indent is None:
             indent = self.default_indent
@@ -670,7 +745,7 @@ class Midget(object):
         bgps = 0
         try:
             if port.dto.get('bgps'):
-                bgps = port.get_bgps()
+                bgps = self.get_bgps_for_port(port)
                 if bgps:
                     bgps = len(bgps)
                 else:
@@ -690,7 +765,8 @@ class Midget(object):
         buf += self._indent_table_buf(str(pt))
         if showbgp and bgps:
             buf += self._bold("{0}PORT BGP INFO:\n".format(indent), 4)
-            buf += self._indent_table_buf(str(self.show_bgps(port.get_bgps() or [], printme=False)))
+            buf += self._indent_table_buf(str(self.show_bgps(self.get_bgps_for_port(port),
+                                                             printme=False)))
         if showchains:
             if port.get_inbound_filter_id():
                 in_filter = self.mapi.get_chain(str(port.get_inbound_filter_id()))
@@ -728,7 +804,7 @@ class Midget(object):
                 bgps = 0
                 try:
                     if port.dto.get('bgps'):
-                        bgps = port.get_bgps()
+                        bgps = self.get_bgps_for_port(port)
                         if bgps:
                             bgps = len(bgps)
                         else:
@@ -772,7 +848,8 @@ class Midget(object):
                                         self.show_chain(self.mapi.get_chain(inbound_filter_id),
                                                         printme=False)))
                     if bgps:
-                        buf += self._link_table_buf(self.show_bgps(port.get_bgps(), printme=False))
+                        buf += self._link_table_buf(self.show_bgps(self.get_bgps_for_port(port),
+                                                                   printme=False))
 
             if pt:
                 buf += str(pt) + '\n'
@@ -786,7 +863,7 @@ class Midget(object):
         router = self.get_router_by_name(router_name)
         bgp_ports = []
         for port in router.get_ports():
-            if port.get_bgps():
+            if self.get_bgps_for_port(port):
                 bgp_ports.append(port)
         bgp_hosts = []
         for port in bgp_ports:
@@ -932,7 +1009,7 @@ class Midget(object):
             buf = ""
             pt = PrettyTable(['BRIDGE NAME', 'ID', 'TENANT', 'Vx LAN PORT'])
             pt.add_row([bridge.get_name(), bridge.get_id(), bridge.get_tenant_id(),
-                        bridge.get_vxlan_port()])
+                        bridge.dto.get('vxLanPortId')])
             title = self._header('BRIDGE:"{0}"'.format(bridge.get_name()))
             box = PrettyTable([title])
             box.align[title] = 'l'
