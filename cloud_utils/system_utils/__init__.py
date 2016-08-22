@@ -23,6 +23,7 @@ def local(cmd, print_method=None):
         process = None
         retcode = None
         output = None
+        fd = None
         try:
             process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                        bufsize=4096)
@@ -34,12 +35,13 @@ def local(cmd, print_method=None):
                     for fd in [process.stdin, process.stdout, process.stderr]:
                         if fd:
                             fd.close()
+                        fd = None
                 except Exception as FDE:
                     print_debug('local:{0}, err closing fd:"{1}". err:"{2}"'
                                      .format(cmd, fd, FDE))
+        process = None
         if retcode:
             error = subprocess.CalledProcessError(retcode, cmd)
             error.output = output
             raise error
         return output.split("\n")
-
