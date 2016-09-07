@@ -589,7 +589,7 @@ class AutoCreds(Eucarc):
             for meth in default_order:
                 if meth(self):
                     return
-            raise ValueError("Could not find path with provided information.")
+            raise ValueError("Could not find credentials with provided information.")
 
 
     def get_existing_keys_from_clc(self, account, user, machine=None, eucahome=None, port=8777,
