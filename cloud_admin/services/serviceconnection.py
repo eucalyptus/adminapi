@@ -1216,7 +1216,8 @@ class ServiceConnection(AWSQueryConnection):
     #                           Instance Migration                                                #
     ###############################################################################################
 
-    def migrate_instances(self, instance_id=None, source_host=None, include_dest=None, exclude_dest=None):
+    def migrate_instances(self, instance_id=None, source_host=None, include_dest=None,
+                          exclude_dest=None):
         """
         Migrate instances
 
@@ -1242,6 +1243,8 @@ class ServiceConnection(AWSQueryConnection):
                 raise Exception('one of the arguments source_host or instance_id is required.')
 
         if instance_id:
+            if not isinstance(instance_id, basestring):
+                instance_id = instance_id.id
             params['InstanceId'] = instance_id
         if source_host:
             params['SourceHost'] = source_host
@@ -1256,9 +1259,11 @@ class ServiceConnection(AWSQueryConnection):
         self.log.debug("MigrateInstances parameters: " + str(params))
         try:
             self.ec2_connection.get_list(action, params, markers)
-        except:
-            raise Exception("Migration failed.")
+        except Exception as ME:
+            self.log.error('{0}\nMigration failed. Error:"{1}"'.format(get_traceback(), ME))
+            raise ME
         return True
+
 
     ###############################################################################################
     #                           Cloud Service Cert Methods (ie: cloud-cert.pem)                   #
