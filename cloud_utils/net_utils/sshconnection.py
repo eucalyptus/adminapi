@@ -533,6 +533,7 @@ class SshConnection():
                                          .format(cmd, E))
                         self.log.warning('Attempting to reconnect and open channel again...')
                         self.refresh_connection()
+                        tran = self.connection.get_transport()
                         chan = tran.open_session(timeout=10)
                     else:
                         raise
@@ -701,7 +702,7 @@ class SshConnection():
                 transport = self.connection.get_transport()
                 if transport:
                     transport.send_ignore()
-                    return transport.isAlive()
+                    return transport.isAlive() and transport.is_active()
             return False
         except EOFError, e:
             return False
