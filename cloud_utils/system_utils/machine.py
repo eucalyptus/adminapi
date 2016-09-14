@@ -771,7 +771,9 @@ class Machine(object):
         printmethod("\n{0}\n".format(pt))
 
     def get_network_interfaces_delta(self, search_name=None):
-        last = self._net_iface_stats or {}
+        last = getattr(self, '_net_iface_stats', {})
+        if last is None:
+            last = {}
         elapsed = None
         old_interfaces = {}
         new_interfaces = {}
