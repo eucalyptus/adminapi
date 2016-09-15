@@ -91,6 +91,7 @@ example with proxy:
 
 import copy
 from httplib import HTTPConnection, CannotSendRequest
+from cloud_utils.log_utils.eulogger import  Eulogger
 import os
 import paramiko
 from paramiko.sftp_client import SFTPClient
@@ -267,7 +268,7 @@ class SshConnection():
         self.timeout = timeout
         self.banner_timeout = banner_timeout
         self.retry = retry
-        self.log = logger
+        self.log = logger or Eulogger(host)
         self.verbose = verbose
         self._sftp = None
         self.key_files = key_files or []
@@ -419,7 +420,8 @@ class SshConnection():
             "SSH Command timer fired after " + str(int(elapsed)) + " seconds. Cmd:'" +
             str(cmd) + "'", elapsed=elapsed)
 
-    def sys(self, cmd, verbose=False, timeout=120, listformat=True, enable_debug=False, code=None):
+    def sys(self, cmd, verbose=False, timeout=120, listformat=True, enable_debug=False, code=None,
+            check_alive=True):
         """
         Issue a command cmd and return output in list format
 
@@ -430,11 +432,14 @@ class SshConnection():
         :param timeout: - optional - integer used to timeout the overall cmd() operation in
                           case of remote blockingd
         :param listformat:  - optional - format output into single buffer or list of lines
+
         :param code: - optional - expected exitcode, will except if cmd's  exitcode does not
                        match this value
+        :param check_alive - optional - bool, If true will check if the transport is alive,
+                             and re-establish it if not before attempting to send the command.
         """
         out = self.cmd(cmd, verbose=verbose, timeout=timeout, listformat=listformat,
-                       enable_debug=enable_debug)
+                       enable_debug=enable_debug, check_alive=check_alive)
         output = out['output']
         if code is not None and out['status'] != code:
             if verbose:
@@ -454,6 +459,7 @@ class SshConnection():
             invoke_shell=False,
             get_pty=True,
             shell_delay=2,
+            check_alive=True,
             shell_return='\r'):
         """
         Runs a command 'cmd' within an ssh connection.
@@ -490,6 +496,8 @@ class SshConnection():
                          passed to cb
         :param enable_debug: - optional - boolean, if set will use self.debug() to print
                                additional messages during cmd()
+        :param check_alive - optional - bool, If true will check if the transport is alive,
+                             and re-establish it if not before attempting to send the command.
         """
         if verbose is None:
             verbose = self.verbose
@@ -507,14 +515,29 @@ class SshConnection():
         if verbose:
             self.debug("[" + self.username + "@" + str(self.host) + "]# " + cmd)
         try:
-            tran = self.connection.get_transport()
-            if tran is None or not tran.active:
-                self.debug("SSH transport was None, attempting to restablish ssh to: " +
+
+            if check_alive and not self.is_alive():
+                self.debug("SSH transport was not alive, attempting to restablish ssh to: " +
                            str(self.host))
                 self.refresh_connection()
-                tran = self.connection.get_transport()
 
-            chan = tran.open_session()
+            tran = self.connection.get_transport()
+            attempt = 0
+            while not attempt:
+                try:
+                    chan = tran.open_session(timeout=10)
+                    break
+                except Exception as E:
+                    if not attempt:
+                        self.log.warning('CMD:"{0}", Error while opening channel:{0}'
+                                         .format(cmd, E))
+                        self.log.warning('Attempting to reconnect and open channel again...')
+                        self.refresh_connection()
+                        tran = self.connection.get_transport()
+                        chan = tran.open_session(timeout=10)
+                    else:
+                        raise
+
             try:
                 chan.settimeout(timeout)
                 if get_pty or invoke_shell:
@@ -668,6 +691,21 @@ class SshConnection():
                        " seconds\nException")
             raise cte
         return ret
+
+    def is_alive(self):
+        """
+        Return info on whether transport is alive.
+        :return: bool
+        """
+        try:
+            if self.connection:
+                transport = self.connection.get_transport()
+                if transport:
+                    transport.send_ignore()
+                    return transport.isAlive() and transport.is_active()
+            return False
+        except EOFError, e:
+            return False
 
     def refresh_connection(self):
         """

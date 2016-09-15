@@ -699,6 +699,12 @@ class Midget(object):
 
     def get_bridge_for_instance(self, instance):
         instance = self._get_instance(instance)
+        bridge_name = "vb_{0}_{1}".format(instance.vpc_id, instance.subnet_id)
+        bridge = self.get_bridge_by_name(bridge_name)
+        if bridge:
+            return bridge
+        self.log.debug('Did not find bridge by name:"{0}", trying by port, cidr...'
+                       .format(bridge_name))
         router = self.get_router_for_instance(instance)
         if not router:
             raise ValueError('Did not find router for instance:{0}'.format(instance.id))
@@ -716,6 +722,31 @@ class Midget(object):
             raise ValueError('peer device for instance router is not a bridge, '
                              'fix the assumptions made in this method!')
         return bridge
+
+    def get_bridge_by_name(self, name):
+        for bridge in self.mapi.get_bridges(None):
+            if bridge.get_name() == name:
+                return bridge
+        return None
+
+    def get_bridge_for_subnet(self, subnet):
+        if isinstance(subnet, basestring):
+            subnets = self.eucaconnection.ec2_connection.get_all_subnets(['verbose', subnet])
+            if not subnets:
+                raise ValueError('SUBNET not found for string:{0}'.format(subnet))
+            subnet = subnets[0]
+        bridge_name = "vb_{0}_{1}".format(subnet.vpc_id, subnet.id)
+        return self.get_bridge_by_name(bridge_name)
+
+    def get_bridge_for_eni(self, eni):
+        if isinstance(eni, basestring):
+            enis = self.eucaconnection.ec2_connection.get_all_network_interfaces(['verbose', eni])
+            if not enis:
+                raise ValueError('ENI not found for string:{0}'.format(eni))
+            else:
+                eni = enis[0]
+        bridge_name = "vb_{0}_{1}".format(eni.vpc_id, eni.subnet_id)
+        return self.get_bridge_by_name(bridge_name)
 
     def get_bgps_for_port(self, port):
         bgps = []
@@ -995,6 +1026,18 @@ class Midget(object):
             if instance.ip_address == public_ip:
                 return instance
         return None
+
+    def show_bridge_for_euca_artifact(self, instance=None, subnet=None, eni=None,
+                                      indent=None, printme=True):
+        if instance:
+            bridge = self.get_bridge_for_instance(instance)
+        if subnet:
+            bridge = self.get_bridge_for_subnet(subnet)
+        if eni:
+            bridge = self.get_bridge_for_eni(eni)
+        return self.show_bridges(bridge, indent=indent, printme=printme)
+
+
 
     def show_bridges(self, bridges=None, indent=None, printme=True):
         if indent is None:
