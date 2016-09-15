@@ -46,6 +46,7 @@ class Eucarc(object):
         self._ec2_url = None
         self._iam_url = None
         self._sts_url = None
+        self._sqs_url = None
         self._token_url = None
         self._cloudwatch_url = None
         self._elb_url = None
@@ -225,6 +226,16 @@ class Eucarc(object):
     @token_url.setter
     def token_url(self, url):
         self._sts_url = url
+
+
+    # SQS
+    @property
+    def sqs_url(self):
+        return self._sqs_url
+
+    @sqs_url.setter
+    def sqs_url(self, url):
+        self._sqs_url = url
 
 
     # Cloud Formation

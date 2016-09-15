@@ -156,7 +156,7 @@ class ServiceMapping(object):
     def __repr__(self):
         return "{0}:{1}:".format(self.__class__.__name__, self.aws_name, self.euca_service)
 
-# Mapping of aws, euca, eucarc, and euca2ools names for services
+# Mapping of service names.ie  aws: (euca, eucarc, and euca2ools) names for services
 aws_to_euca_service_map = {
     "ec2": ServiceMapping("ec2", "compute", 'ec2_url', 'ec2-url'),
     "iam": ServiceMapping("iam", "euare", 'euare_url', 'iam-url'),
@@ -171,6 +171,7 @@ aws_to_euca_service_map = {
     "monitoring": ServiceMapping('monitoring', "cloudwatch", 'aws_cloudwatch_url',
                                  'monitoring-url'),
     "sts": ServiceMapping("sts", "tokens", 'token_url', 'sts-url'),
+    "sqs": ServiceMapping("sqs", 'simplequeue', 'sqs_url', 'sqs-url'),
     "reporting": ServiceMapping("reporting", 'reporting', 'reporting_url', 'reporting-url'),
     "properites": ServiceMapping("properties", "properties", 'properties_url', 'properties-url')
 }
