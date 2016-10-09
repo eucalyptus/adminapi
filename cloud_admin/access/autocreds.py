@@ -318,7 +318,7 @@ class AutoCreds(Eucarc):
 
     @region.setter
     def region(self, value):
-        self.log.info('Setting region to Value:{0}'.format(value))
+        self.log.debug('Setting region to Value:{0}'.format(value))
         self.update_region_and_domain(region=value)
 
     @property
@@ -326,8 +326,10 @@ class AutoCreds(Eucarc):
         if self._domain is None:
             try:
                 if self.serviceconnection:
-                    self.log.debug('Attempting to fetch service domain from property')
-                    domain_prop = self.serviceconnection.get_property('system.dns.dnsdomain')
+                    prop_name = 'system.dns.dnsdomain'
+                    self.log.debug('Attempting to fetch service domain from property: {0}'
+                                   .format(prop_name))
+                    domain_prop = self.serviceconnection.get_property(prop_name)
                     self.log.debug('Got service domain: {0}'.format(domain_prop.value))
                     domain = domain_prop.value
                     if domain:
@@ -339,7 +341,7 @@ class AutoCreds(Eucarc):
 
     @domain.setter
     def domain(self, value):
-        self.log.info('Setting domain to Value:{0}'.format(value))
+        self.log.debug('Setting domain to Value:{0}'.format(value))
         self.update_region_and_domain(domain=value)
 
     @property
@@ -350,15 +352,16 @@ class AutoCreds(Eucarc):
 
     @region_domain.setter
     def region_domain(self, value):
-        self.log.info('Setting region_domain to domain:{0}'.format(value))
+        self.log.debug('Setting region_domain to domain:{0}'.format(value))
         self.update_region_and_domain(domain=value)
 
     @property
     def service_port(self):
-        self.log.info('Fetching service_port. serviceconnection:{0}'.format(self.serviceconnection))
         if not self._service_port and self.serviceconnection:
             try:
-                port_prop = self.serviceconnection.get_property('bootstrap.webservices.port')
+                prop_name = 'bootstrap.webservices.port'
+                self.log.debug('Attempting to fetch port from property:"{0}"'.format(prop_name))
+                port_prop = self.serviceconnection.get_property(prop_name)
                 port = port_prop.value
                 if port:
                     self._service_port = port

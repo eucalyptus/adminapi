@@ -2,7 +2,7 @@
 
 from setuptools import setup, find_packages
 
-__version__ = '1.4.3.0.1'
+__version__ = '1.4.3.0.1.1'
 
 setup(name="adminapi",
       version=__version__,
@@ -17,7 +17,7 @@ setup(name="adminapi",
                         'pywinrm',
                         'requests >= 1',
                         'prettytable',
-			            'python-dateutil',
+                        'python-dateutil',
                         'dnspython',
                         'midonetclient'], 
       packages=find_packages(),
