@@ -183,7 +183,8 @@ class AutoCreds(Eucarc):
                  aws_access_key=None,
                  aws_secret_key=None,
                  aws_account_name=None,
-                 region_domain=None,
+                 region=None,
+                 domain=None,
                  service_port=8773,
                  https=False,
                  aws_user_name=None,
@@ -205,9 +206,12 @@ class AutoCreds(Eucarc):
                  keysdir=None,
                  string=None,
                  clc_connect_kwargs=None):
+        print 'AUTOCREDS DOMAIN:{0} REGION:{1}, SC:{2}'.format(domain, region, service_connection)
+
         super(AutoCreds, self).__init__(logger=logger, loglevel=log_level)
-        self._local_files = None
         self._serviceconnection = service_connection
+        self._local_files = None
+        self._https = https
         self._clc_ip = hostname
         # Todo implement building creds from a passed string buffer
         self._string = string
@@ -216,15 +220,23 @@ class AutoCreds(Eucarc):
         self._credpath = credpath
         self._account_name = aws_account_name
         self._user_name = aws_user_name
+        self._service_port = service_port
         self._has_existing_cert = existing_certs
         self.aws_secret_key = aws_secret_key
         self.aws_access_key = aws_access_key
-        if region_domain is not None:
-            if not re.search("\w", region_domain):
-                region_domain = ""
-        self._region_domain = region_domain
+        self._region_domain = None
+        self._region = None
+        self._domain = None
+        if region is not None:
+            if not re.search("\w", region):
+                region = ""
+        self._region = region
+        if domain is not None:
+            if not re.search("\w", domain):
+                domain = ""
+        self._domain = domain
+        self.update_region_and_domain(update=False)
         self._service_port = service_port
-        self._https = https
         self._has_updated_connect_args = False  # used to speed up auto find credentials
         if (username != 'root' or proxy_username != 'root' or password or keypath or
                 proxy_hostname or proxy_keypath or proxy_password):
@@ -243,8 +255,11 @@ class AutoCreds(Eucarc):
         self._clc_connect_kwargs.update(clc_connect_kwargs)
         if eucarc_obj:
             self.__dict__.update(eucarc_obj.__dict__)
-        if not (self.aws_access_key and self.aws_secret_key) and auto_create:
-            self.auto_find_credentials()
+        if not (self.aws_access_key and self.aws_secret_key):
+            if auto_create:
+                self.auto_find_credentials()
+        else:
+            self.update_attrs_from_cloud_services()
 
     @property
     def is_https(self):
@@ -259,35 +274,105 @@ class AutoCreds(Eucarc):
             self.update_attrs_from_cloud_services()
 
 
+    def update_region_and_domain(self, region=None, domain=None, update=True):
+        """
+        Convenience method to sort out region domain values from the many possible private and
+        public cloud options.
+         settings.
+        :param region: region to connect to
+        :param domain: cloud domain to connect to
+        :param update: update the service endpoints upon changes detected to the region or domain
+        :return: None
+        """
+        self.log.info('Updating with region:{0} and domain{1}'.format(region, domain))
+        region = region or self.region or ""
+        domain = domain or self.domain or ""
+        region = region.strip()
+        domain = domain.strip()
+        if region.endswith('amazonaws.com'):
+            domain = 'amazonaws.com'
+            region = region.rstrip(domain)
+        if region:
+            region = str(region).strip()
+            if domain and region.endswith(domain):
+                region = region.rstrip(domain).strip('.')
+        if domain and domain:
+            region = region.rstrip(domain).strip('.')
+            domain = domain.lstrip(region).strip('.')
+        self._region = region
+        self._domain = domain
+        if not domain:
+            self.log.warning('Cloud domain is not set, this may cause connection problems')
+
+        region_domain = region.split('.') + domain.split('.')
+        region_domain = ".".join(region_domain).strip('.')
+        changed = not(region_domain == self._region_domain)
+        self._region_domain = region_domain
+        if update and changed:
+            self.update_attrs_from_cloud_services()
+        self.log.info('Done. Updated region to:{0}/{1} domain to:{2}/{3}'.format(self._region, self.region,  self._domain, self.domain))
+
+    @property
+    def region(self):
+        return self._region
+
+    @region.setter
+    def region(self, value):
+        self.log.debug('Setting region to Value:{0}'.format(value))
+        self.update_region_and_domain(region=value)
+
+    @property
+    def domain(self):
+        if self._domain is None:
+            try:
+                if self.serviceconnection:
+                    prop_name = 'system.dns.dnsdomain'
+                    self.log.debug('Attempting to fetch service domain from property: {0}'
+                                   .format(prop_name))
+                    domain_prop = self.serviceconnection.get_property(prop_name)
+                    self.log.debug('Got service domain: {0}'.format(domain_prop.value))
+                    domain = domain_prop.value
+                    if domain:
+                        self._domain = domain
+            except Exception as E:
+                self.log.warning('{0}\nError fetching domain from cloud:{1}'
+                                 .format(get_traceback(), E))
+        return self._domain
+
+    @domain.setter
+    def domain(self, value):
+        self.log.debug('Setting domain to Value:{0}'.format(value))
+        self.update_region_and_domain(domain=value)
+
     @property
     def region_domain(self):
-        if self._region_domain is None and self.serviceconnection:
-            self.log.debug('Attempting to fetch service domain from property')
-            domain_prop = self.serviceconnection.get_property('system.dns.dnsdomain')
-            self.log.debug('Got service domain: {0}'.format(domain_prop.value))
-            domain = domain_prop.value
-            if domain:
-                self._region_domain = domain
+        if self._region_domain is None:
+            self.update_region_and_domain()
         return self._region_domain
 
     @region_domain.setter
-    def region_domain(self, domain):
-        if domain != self.region_domain:
-            self._region_domain = domain
-            self.update_attrs_from_cloud_services()
+    def region_domain(self, value):
+        self.log.debug('Setting region_domain to domain:{0}'.format(value))
+        self.update_region_and_domain(domain=value)
 
     @property
     def service_port(self):
         if not self._service_port and self.serviceconnection:
-            port_prop = self.serviceconnection.get_property('bootstrap.webservices.port')
-            port = port_prop.value
-            if port:
-                self._service_port = port
+            try:
+                prop_name = 'bootstrap.webservices.port'
+                self.log.debug('Attempting to fetch port from property:"{0}"'.format(prop_name))
+                port_prop = self.serviceconnection.get_property(prop_name)
+                port = port_prop.value
+                if port:
+                    self._service_port = port
+            except Exception as E:
+                self.log.warning('{0}\nError fetching service port from service connection:{1}, '
+                                 'err:{2}'.format(get_traceback(), self.serviceconnection, E))
         return self._service_port
 
     @service_port.setter
     def service_port(self, port):
-        if port != self.service_port:
+        if port != self._service_port:
             self._service_port = port
             self.update_attrs_from_cloud_services()
 
@@ -309,9 +394,15 @@ class AutoCreds(Eucarc):
 
     def _connect_services(self):
         if self.aws_secret_key and self.aws_access_key and self._clc_ip:
-            self._serviceconnection = ServiceConnection(hostname=self._clc_ip,
-                                                        aws_access_key=self.aws_access_key,
-                                                        aws_secret_key=self.aws_secret_key)
+            try:
+                self._serviceconnection = ServiceConnection(hostname=self._clc_ip,
+                                                            aws_access_key=self.aws_access_key,
+                                                            aws_secret_key=self.aws_secret_key)
+            except Exception as E:
+                self.log.error("{0}\nError creating Euca Service Connection:{1}"
+                               .format(get_traceback(), E))
+        else:
+            self.log.debug("Can't create serviceconnection without clc_ip, access, and secret key")
         return self._serviceconnection
 
     def _close_adminpi(self):
@@ -331,19 +422,20 @@ class AutoCreds(Eucarc):
         gathered via the Eucalyptus admin api interface
         :returns dict mapping eucarc common key-values to the discovered service URIs.
         """
-        if not self.serviceconnection and self.region_domain:
+        if not self.serviceconnection and not self.region_domain:
             raise RuntimeError('Can not fetch service paths from cloud without a "region_domain"'
                                'and/or a ServiceConnection\n A ServiceConnection requires: '
                                'clc_ip, or aws_access_key + aws_secret_key and bootstrap endpoint')
         if self.region_domain:
-            path_dict = self._get_service_paths_from_domain(domain=self.region_domain,
+            path_dict = self._get_service_paths_from_domain(domain=self.domain,
+                                                            region_domain=self.region_domain,
                                                             port=self.service_port,
                                                             secure=self.is_https)
         elif self.region_domain is not None:
             path_dict = self._get_service_paths_from_service_host_urls(self.serviceconnection)
         else:
             path_dict = self._get_service_paths_from_serviceconnection(self.serviceconnection,
-                                                                       logger=self.log)
+                                                                   logger=self.log)
         if not path_dict.get('ec2_access_key'):
             path_dict['ec2_access_key'] = self.aws_access_key
         if not path_dict.get('ec2_secret_key'):
@@ -354,11 +446,18 @@ class AutoCreds(Eucarc):
         #self._close_adminpi()
         return path_dict
 
-    @classmethod
-    def _get_service_paths_from_domain(cls, domain, port=8773, secure=False):
+    def _get_service_paths_from_domain(self, region_domain=None, domain=None, port=8773,
+                                       secure=False, verbose=False):
+        region_domain = region_domain or self.region_domain
+        domain = domain or self.domain or region_domain
+        if verbose:
+            self.log.debug('Domain is {0}'.format(domain))
+            self.log.debug('Region is {0}'.format(region_domain))
         ret_dict = {}
         for service_prefix, mapping in aws_to_euca_service_map.iteritems():
             # http://monitoring.h-12.autoqa.qa1.eucalyptus-systems.com:8773/
+            # http://ec2.us-west-1.amazonaws.com
+            # https://iam.amazonaws.com
             if secure:
                 url = "https://"
             else:
@@ -367,7 +466,14 @@ class AutoCreds(Eucarc):
                 str_port = ":" + str(port)
             else:
                 str_port = ""
-            url = "{0}{1}.{2}{3}/".format(url, service_prefix, domain, str_port)
+
+            if service_prefix.lower() in ['iam', 'sts']:
+                url = "https://{0}.{1}{2}/".format(service_prefix, domain, str_port)
+            else:
+                url = "{0}{1}.{2}{3}/".format(url, service_prefix, region_domain, str_port)
+            if verbose:
+                self.log.debug('Setting {0} to {1} for prefix:{2}'
+                               .format(mapping.eucarc, url, service_prefix))
             ret_dict[mapping.eucarc] = url
         return ret_dict
 
@@ -408,9 +514,6 @@ class AutoCreds(Eucarc):
                 if service.type == mapping.euca_service:
                     ret_dict[mapping.eucarc] = str(service.uri)
         return ret_dict
-
-
-
 
     def get_local_eucarc(self, credpath):
         """
@@ -465,8 +568,8 @@ class AutoCreds(Eucarc):
         return self._from_string(string=cred_string)
 
 
-    def auto_find_credentials(self, from_file=True, assume_admin=True, service_connection=True,
-                              from_remote=True, from_db=True):
+    def auto_find_credentials(self, keys_and_region=True, from_file=True, assume_admin=True,
+                              service_connection=True, from_remote=True, from_db=True):
         """
         Convenience method which attempts to automatically produce credentials based upon the
         information provided to this AutoCreds obj.
@@ -483,12 +586,26 @@ class AutoCreds(Eucarc):
         Upon the first successful discovery of credentials, the local obj is populated with
         eucarc attributes and returns.
         """
+        def try_keys_and_region(self):
+            self.log.debug('Trying creds from provided key and region info...')
+            if self.aws_secret_key and self.aws_access_key and self.region_domain:
+                try:
+                    res =  self.update_attrs_from_cloud_services()
+                    if res:
+                        self.log.debug('Derived creds from serviceconnection')
+                        return res
+
+                except RuntimeError as RE:
+                    self.log.debug('{0}\nFailed to update creds using serviceconnection, err:"{1}"'
+                                   .format(get_traceback(), str(RE)))
+                    self._close_adminpi()
 
         def try_from_file(self):
             self.log.debug('Trying creds from local file...')
             if self._credpath:
                 try:
-                    res = self.get_local_eucarc(credpath=self._credpath)
+                    res = (self.get_local_eucarc(credpath=self._credpath) and
+                           self.update_attrs_from_cloud_services())
                     if res:
                         self.log.debug('Found local creds at: "{0}"'.format(self._credpath))
                         return res
@@ -502,12 +619,11 @@ class AutoCreds(Eucarc):
                 try:
                     res = self.update_attrs_from_cloud_services()
                     if res:
-                        self.log.debug('Derived creds from serviceconnection')
+                        self.log.debug('Derived creds from provided keys and region info')
                         return res
                 except RuntimeError as RE:
-                    self.log.debug('{0}\nFailed to update creds using serviceconnection, err:"{1}"'
-                               .format(get_traceback(), str(RE)))
-                    self._close_adminpi()
+                    self.log.debug('{0}\nFailed to update creds from keys + region domain, '
+                                   'err:"{1}"'.format(get_traceback(), str(RE)))
 
         def try_assume_admin_on_clc(self):
             self.log.debug('Trying creds from assume admin role on clc...')
@@ -538,7 +654,8 @@ class AutoCreds(Eucarc):
                                 self._keysdir = machine.get_abs_path(self._credpath)
                         except:
                             pass
-                        res = self.get_remote_eucarc(credpath=self._credpath, machine=machine)
+                        res = (self.get_remote_eucarc(credpath=self._credpath, machine=machine) and
+                               self.update_attrs_from_cloud_services())
                         if res:
                             self.log.debug('Found remote creds on:"{0}", at path:"{1}"'
                                        .format(self.creds_machine.ssh.host, self._credpath))
@@ -568,6 +685,8 @@ class AutoCreds(Eucarc):
                                    .format(get_traceback(), str(RE)))
 
         default_order = []
+        if keys_and_region:
+            default_order.append(try_keys_and_region)
         if from_file:
             default_order.append(try_from_file)
         if service_connection:
