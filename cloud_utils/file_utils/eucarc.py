@@ -2,6 +2,7 @@
 import operator
 import os
 import re
+from ConfigParser import ConfigParser
 from collections import OrderedDict
 from urlparse import urljoin, urlparse
 from prettytable import PrettyTable
@@ -420,6 +421,22 @@ class Eucarc(object):
         self._access_key = value
 
     @property
+    def key_id(self):
+        return self._access_key
+
+    @key_id.setter
+    def key_id(self, value):
+        self._access_key = value
+
+    @property
+    def secret_key(self):
+        return self._secret_key
+
+    @secret_key.setter
+    def secret_key(self, value):
+        self._secret_key = value
+
+    @property
     def aws_secret_key(self):
         return self._secret_key
 
@@ -510,7 +527,78 @@ class Eucarc(object):
             except:
                 pass
 
-    def _from_string(self, string=None, keysdir=None):
+    def _from_ini_file(self, file, user_string=None, region=None, keysdir=None):
+        """
+            Parse the Cloud attributes from this string buffer expecting euca2ools .ini format.
+            Populates self with attributes.
+
+            :param string: String buffer to parse from. By default self._string is used.
+            :param keysdir: A vaule to replace _KEY_DIR_STR (${EUCA_KEY_DIR}) with, by default
+            this is the filepath, but when parsing from a string buffer filepath is unknown
+            :returns dict of attributes.
+        """
+        ret_dict = {}
+        cf = ConfigParser()
+        with file:
+            file.seek(0)
+            cf.readfp(file)
+            file.seek(0)
+            print 'read from file:\n{0}'.format(file.read())
+        cf_dict = {'users':{}, 'regions':{}, 'global':{}}
+        for section in cf.sections():
+            print 'got section:{0}'.format(section)
+            s = {}
+            for opt in cf.options(section=section):
+                print 'got opt:{0}'.format(opt)
+                s[opt] = cf.get(section=section, option=opt)
+            sect_type = section.split()[0]
+            if sect_type == 'user':
+                cf_dict['users'][section] = s
+            if sect_type == 'region':
+                cf_dict['regions'][section] = s
+            if sect_type == 'global':
+                cf_dict['global'] = s
+        print 'got cf dict:{0}'.format(cf_dict)
+        if cf_dict['global']:
+            for key, value in cf_dict['global'].iteritems():
+                print 'Got global item:{0}={1}'.format(key, value)
+                if key == 'default-region' and not region:
+                    print 'setting region to {0}'.format(value)
+                    region = value
+                elif key == 'default-user' and not user_string:
+                    print 'setting key to {0}'.format(value)
+                    user_string = value
+                else:
+                    ret_dict[key] = value
+
+        if region:
+            region = str(region).strip()
+            for regkey, reginfo in cf_dict['regions'].iteritems():
+                s_type, regkey = regkey.split()
+                if regkey == region:
+                    for key, value in reginfo.iteritems():
+                        if key == 'user' and not user_string:
+                            user_string = value
+                        else:
+                            ret_dict[key] = value
+                    break
+        if user_string:
+            for user, user_dict in cf_dict['users'].iteritems():
+                s_type, user_info = user.split()
+                if str(user_info).strip().lower() == user_string:
+                    for key, value in user_dict.iteritems():
+                        ret_dict[key] = value
+                    break
+
+        new_dict = {}
+        for key, value in ret_dict.iteritems():
+            key = key.lower().replace('-', '_')
+            self.__setattr__(key, value)
+            new_dict[key] = value
+        return new_dict
+
+
+    def _from_string(self, string=None, keysdir=None, is_ini=False):
         """
         Parse the Eucarc attributes from this string buffer. Populates self with attributes.
 
@@ -563,7 +651,7 @@ class Eucarc(object):
                 new_dict['message'] = message
         return new_dict
 
-    def _from_filepath(self, filepath=None, sshconnection=None, keysdir=None):
+    def _from_filepath(self, filepath=None, sshconnection=None, keysdir=None, is_ini=None):
         """
         Read the eucarc from a provided filepath. If an sshconnection obj is provided than
         this will attempt to read from a file path via the sshconnection, otherwise the filepath
@@ -577,6 +665,11 @@ class Eucarc(object):
         :returns dict of attributes
         """
         filepath = filepath or self._credpath
+        if is_ini is None:
+            if str(filepath).endswith('.ini'):
+                is_ini = True
+            else:
+                is_ini = False
         if keysdir is None:
             keysdir = self._keysdir or os.path.dirname(filepath)
         sshconnection = sshconnection or self._sshconnection
@@ -595,6 +688,9 @@ class Eucarc(object):
                                              os.path.join(filepath, 'eucarc')))
             keysdir = urljoin(sftppath, keysdir)
             self._keysdir = keysdir
+            if is_ini:
+                return self._from_ini_file(file=sshconnection.sftp.open(remotepath),
+                                           keysdir=keysdir)
             string = sshconnection.sys('cat {0}'.format(remotepath), listformat=False, code=0)
         else:
             # This is a local file...
@@ -608,6 +704,8 @@ class Eucarc(object):
                     raise ValueError('File not found at path(s):"{0}", or "{1}"'
                                      .format(orig_file_path, filepath))
             f = open(filepath)
+            if is_ini:
+                return self._from_ini_file(file=f, keysdir=keysdir)
             with f:
                 string = f.read()
         return self._from_string(string, keysdir=keysdir)
