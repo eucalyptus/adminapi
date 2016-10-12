@@ -120,6 +120,7 @@ import os.path
 import re
 from StringIO import StringIO
 import zipfile
+from ConfigParser import ConfigParser
 from urlparse import urlparse
 from cloud_utils.file_utils.eucarc import Eucarc
 from cloud_utils.log_utils import get_traceback
@@ -782,6 +783,139 @@ class AutoCreds(Eucarc):
                                .format(get_traceback(), account, user, "\n".join(qout), str(PE)))
                 raise PE
         return ret
+
+    def create_ini_file(self, filepath, update_user=True, update_region=True, region=None,
+                        user_string=None, machine=None, overwrite=True):
+        """
+        Creates or updates a cloud config .ini file with values held in this run time config obj..
+        The file provided by 'filepath' can be remote or local.
+        :param filepath: string full file path to .ini file to be updated or created
+        :param update_user: bool, if true will update values in a section of the ini file
+                            for this user.
+        :param update_region: bool, if true will update values in a section of the ini file
+                              for this region.
+        :param machine: A Machine obj. If provided the file will be created at filepath on this
+                        remote machine.
+        :param overwrite: bool, if true and if an existing ini file exists at filepath, attributes
+                          of this runtime obj will replace existing attributes. If false, only
+                          pre-existing attributes will remain untouched.
+        :return: config parser object with upated config
+        """
+        if not update_region and not update_user:
+            self.log.warning('update_user and update_region were both false, not creating '
+                             'ini file ')
+
+        if update_region:
+            region = region or self.region or self.region_domain
+            if not region:
+                raise ValueError('Region was not found or provided and update_region is set to '
+                                 'True. Please provide the region')
+        else:
+            region = None
+        if update_user:
+            if not user_string:
+                if not self.account_id or not self.user_name:
+                    raise ValueError('Missing values needed o update user ini file info: '
+                                     'account_id:"{0}", user_name:"{1}". Please set these or '
+                                     'provide the user_string with: "account_id:user_name_format'
+                                     .format(self.account_id, self.user_name))
+                user_string = "{0}:{1}".format(self.account_id, self.user_name)
+        else:
+            user_string = None
+        read_f = None
+        conf = {}
+        # Read in any existing info...
+        try:
+            if machine:
+                f_dir = os.path.dirname(filepath)
+                if f_dir:
+                    machine.sys('mkdir -p {0}'.format(f_dir))
+                if machine.is_file(filepath):
+                    read_f = machine.open_remote_file(filepath, 'r')
+            else:
+                f_dir = os.path.dirname(filepath)
+                if f_dir:
+                    if not os.path.exists(f_dir):
+                        try:
+                            os.makedirs(f_dir)
+                        except OSError as exc:
+                            if exc.errno != errno.EEXIST:
+                                raise
+                if os.path.exists(filepath):
+                    read_f = open(filepath, "r")
+            if read_f:
+                conf = self._from_ini_file(file=read_f, all=True)
+        finally:
+            if read_f:
+                read_f.close()
+        # Create a merged dict of existing and local attributes...
+        local_attrs = self.get_eucarc_attrs()
+        user_info = {}
+        region_info = {}
+        for key, value in local_attrs.iteritems():
+            if re.search('key|account|user', key):
+                user_info[key] = value
+            elif re.search('url', key):
+                region_info[key] = value
+        if update_user and user_info:
+            users = conf.get('users', {})
+            existing = users.get(user_string, {})
+            if not existing:
+                users[user_string] = {}
+            for key, value in user_info.iteritems():
+                if overwrite or not existing or not existing.get(key):
+                    users[user_string][key] = value
+            conf['users'] = users
+        if update_region and region_info:
+            regions = conf.get('regions', {})
+            existing = regions.get(region, {})
+            if not existing:
+                regions[region] = {}
+            for key, value in region_info.iteritems():
+                if overwrite or not existing or not existing.get(key):
+                    regions[region][key] = value
+            conf['regions'] = regions
+        # Build the new config parser obj...
+        new_conf = ConfigParser()
+        for user, user_info in conf.get('users', {}).iteritems():
+            user_sect = 'user {0}'.format(user)
+            new_conf.add_section(user_sect)
+            for key, value in user_info.iteritems():
+                key = str(key).replace("_", "-")
+                new_conf.set(user_sect, key, value)
+        for region, region_info in conf.get('regions', {}).iteritems():
+            region_sect = 'region {0}'.format(region)
+            new_conf.add_section(region_sect)
+            for key, value in region_info.iteritems():
+                key = str(key).replace("_", "-")
+                new_conf.set(region_sect, key, value)
+        for extra_key, extra_value in conf.iteritems():
+            if extra_key not in ['users', 'regions']:
+                new_conf.add_section(extra_key)
+                if isinstance(extra_value, dict):
+                    for key, value in extra_value.iteritems():
+                        key = str(key).replace("_", "-")
+                        new_conf.set(extra_key, key, value)
+                else:
+                    # Add to defaults config section
+                    key = str(extra_key).replace("_", "-")
+                    new_conf.set(None, extra_key, extra_value)
+        # Write the config file out...
+        try:
+            if machine:
+                dest = 'Host:{0}, File:{1}'.format(machine, filepath)
+                write_f = machine.open_remote_file(filepath, 'w')
+            else:
+                dest = 'Host:LOCAL, File:{0}'.format(filepath)
+                write_f = open(filepath, "w")
+            if write_f:
+                new_conf.write(write_f)
+        finally:
+            if write_f:
+                write_f.close()
+        return new_conf
+        self.log.debug('Done Writing INI info to:{0}'.format(dest))
+
 
     def create_local_creds(self, local_destdir, machine=None, keydir=None, overwrite=False,
                            zipfilename=None, ziponly=False):
