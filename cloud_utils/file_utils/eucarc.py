@@ -7,6 +7,7 @@ from collections import OrderedDict
 from urlparse import urljoin, urlparse
 from prettytable import PrettyTable
 from cloud_utils.log_utils.eulogger import Eulogger
+from cloud_utils.log_utils import get_traceback
 from cloud_utils.net_utils.sshconnection import CommandExitCodeException
 
 
@@ -583,6 +584,7 @@ class Eucarc(object):
                     ret_dict[key] = value
         if region:
             region = str(region).strip()
+            ret_dict['region'] = region
             for regkey, reginfo in cf_dict['regions'].iteritems():
                 s_type, regkey = regkey.split()
                 if regkey == region:
@@ -602,9 +604,16 @@ class Eucarc(object):
 
         new_dict = {}
         for key, value in ret_dict.iteritems():
-            key = key.lower().replace('-', '_')
-            self.__setattr__(key, value)
-            new_dict[key] = value
+            try:
+                key = key.lower().replace('-', '_')
+                if key.startswith("_"):
+                    self.log.warning('Illegal name value:"{0}", not setting attribute'.format(key))
+                else:
+                    self.__setattr__(key, value)
+                    new_dict[key] = value
+            except Exception as E:
+                self.log.error('{0}\nFailed to set attr:{1} to value:{2}. Error:{3}'
+                               .format(get_traceback(), key, value, E))
         return new_dict
 
 
