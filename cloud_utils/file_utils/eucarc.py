@@ -2,6 +2,7 @@
 import operator
 import os
 import re
+from ConfigParser import ConfigParser
 from collections import OrderedDict
 from urlparse import urljoin, urlparse
 from prettytable import PrettyTable
@@ -420,6 +421,22 @@ class Eucarc(object):
         self._access_key = value
 
     @property
+    def key_id(self):
+        return self._access_key
+
+    @key_id.setter
+    def key_id(self, value):
+        self._access_key = value
+
+    @property
+    def secret_key(self):
+        return self._secret_key
+
+    @secret_key.setter
+    def secret_key(self, value):
+        self._secret_key = value
+
+    @property
     def aws_secret_key(self):
         return self._secret_key
 
@@ -510,7 +527,88 @@ class Eucarc(object):
             except:
                 pass
 
-    def _from_string(self, string=None, keysdir=None):
+    def _from_ini_file(self, file, user_string=None, region=None, keysdir=None, all=False):
+        """
+            Parse the Cloud attributes from this string buffer expecting euca2ools .ini format.
+            Populates self with attributes.
+
+            :param user_string: 'account_id:username' string used to match config block/section
+            :param region: string used to match region section within config
+            :param keysdir: A vaule to replace _KEY_DIR_STR (${EUCA_KEY_DIR}) with, by default
+            this is the filepath, but when parsing from a string buffer filepath is unknown
+            :param all: boolean. If True returns a dictionary of the entire config. If false
+                        returns the values for a specific user and region as defined by the
+                        provided parameters or within the config files default settings.
+            :returns dict of attributes.
+        """
+        ret_dict = {}
+        cf = ConfigParser()
+        with file:
+            file.seek(0)
+            cf.readfp(file)
+            file.seek(0)
+            print 'read from file:\n{0}'.format(file.read())
+        cf_dict = {'users':{}, 'regions':{}, 'global':{}}
+        for section in cf.sections():
+            print 'got section:{0}'.format(section)
+            sect_info = {}
+            for opt in cf.options(section=section):
+                print 'got opt:{0}'.format(opt)
+                sect_info[opt] = cf.get(section=section, option=opt)
+            sect_type = section.split()[0]
+            if sect_type == 'user':
+                cf_dict['users'][section] = sect_info
+            elif sect_type == 'region':
+                cf_dict['regions'][section] = sect_info
+            elif sect_type == 'global':
+                cf_dict['global'] = sect_info
+            else:
+                cf_dict[section] = sect_info
+        for key, value in cf.defaults():
+            cf_dict[key] = value
+        print 'got cf dict:{0}'.format(cf_dict)
+        if all:
+            return cf_dict
+
+        if cf_dict['global']:
+            for key, value in cf_dict['global'].iteritems():
+                print 'Got global item:{0}={1}'.format(key, value)
+                if key == 'default-region' and not region:
+                    print 'setting region to {0}'.format(value)
+                    region = value
+                elif key == 'default-user' and not user_string:
+                    print 'setting key to {0}'.format(value)
+                    user_string = value
+                else:
+                    ret_dict[key] = value
+        if region:
+            region = str(region).strip()
+            for regkey, reginfo in cf_dict['regions'].iteritems():
+                s_type, regkey = regkey.split()
+                if regkey == region:
+                    for key, value in reginfo.iteritems():
+                        if key == 'user' and not user_string:
+                            user_string = value
+                        else:
+                            ret_dict[key] = value
+                    break
+        if user_string:
+            for user, user_dict in cf_dict['users'].iteritems():
+                s_type, user_info = user.split()
+                if str(user_info).strip().lower() == user_string:
+                    for key, value in user_dict.iteritems():
+                        ret_dict[key] = value
+                    break
+
+        new_dict = {}
+        for key, value in ret_dict.iteritems():
+            key = key.lower().replace('-', '_')
+            self.__setattr__(key, value)
+            new_dict[key] = value
+        return new_dict
+
+
+    def _from_string(self, string=None, keysdir=None, is_ini=False):
         """
         Parse the Eucarc attributes from this string buffer. Populates self with attributes.
 
@@ -563,7 +661,8 @@ class Eucarc(object):
                 new_dict['message'] = message
         return new_dict
 
-    def _from_filepath(self, filepath=None, sshconnection=None, keysdir=None):
+    def _from_filepath(self, filepath=None, sshconnection=None, keysdir=None, is_ini=None,
+                       user_string=None, region=None):
         """
         Read the eucarc from a provided filepath. If an sshconnection obj is provided than
         this will attempt to read from a file path via the sshconnection, otherwise the filepath
@@ -574,9 +673,21 @@ class Eucarc(object):
         :param sshconnection: An sshconnection obj, used to read from a remote machine
         :param keysdir: A vaule to replace _KEY_DIR_STR (${EUCA_KEY_DIR}) with, by defual this is
                        the filepath, but when parsing from a string buffer filepath is unknown
+        :param is_ini: optional bool. If True will attempt to parse the file as a tools ini file.
+                       If false will attempt to parse as a key value rc file. Default is None,
+                       which will parse as a .ini file if the filename ends with this extension.
+        :param user_string: If parsed as an ini file this string is used to match the user section.
+                            The string is in the format "accountid:username:
+        :param region: If parsed as an ini file this string is used to match the region config
+                       block.
         :returns dict of attributes
         """
         filepath = filepath or self._credpath
+        if is_ini is None:
+            if str(filepath).endswith('.ini'):
+                is_ini = True
+            else:
+                is_ini = False
         if keysdir is None:
             keysdir = self._keysdir or os.path.dirname(filepath)
         sshconnection = sshconnection or self._sshconnection
@@ -595,6 +706,9 @@ class Eucarc(object):
                                              os.path.join(filepath, 'eucarc')))
             keysdir = urljoin(sftppath, keysdir)
             self._keysdir = keysdir
+            if is_ini:
+                return self._from_ini_file(file=sshconnection.sftp.open(remotepath),
+                                           keysdir=keysdir)
             string = sshconnection.sys('cat {0}'.format(remotepath), listformat=False, code=0)
         else:
             # This is a local file...
@@ -608,6 +722,8 @@ class Eucarc(object):
                     raise ValueError('File not found at path(s):"{0}", or "{1}"'
                                      .format(orig_file_path, filepath))
             f = open(filepath)
+            if is_ini:
+                return self._from_ini_file(file=f, keysdir=keysdir)
             with f:
                 string = f.read()
         return self._from_string(string, keysdir=keysdir)
@@ -629,7 +745,7 @@ class Eucarc(object):
         pt.header = False
         pt.max_width['VALUE'] = 85
         pt.max_width['KEY'] = 35
-        attrs = OrderedDict(sorted(self.get_eucarc_attrs().items()))
+        attrs = OrderedDict(sorted(self.get_eucarc_attrs(show_empty=True).items()))
         for key, value in attrs.iteritems():
             if value is None or isinstance(value, basestring):
                 if not search or match_op(re.search(str(search), key) or \
@@ -642,10 +758,10 @@ class Eucarc(object):
         else:
             return pt
 
-    def get_eucarc_attrs(self, excludes=['^_']):
+    def get_eucarc_attrs(self, excludes=['^_'], show_empty=False):
         ret_dict = {}
         for key, value in self.__dict__.iteritems():
-            if isinstance(value, basestring) or isinstance(value, type(None)):
+            if isinstance(value, basestring) or (show_empty and not value):
                 skip = False
                 for exclude in excludes:
                     if re.search(exclude, str(key)):
@@ -656,7 +772,9 @@ class Eucarc(object):
         for key in vars(Eucarc):
             if type(getattr(Eucarc, key)) == property:
                 try:
-                    ret_dict[key] = getattr(self, key)
+                    value = getattr(self, key)
+                    if isinstance(value, basestring) or (show_empty and not value):
+                        ret_dict[key] = getattr(self, key)
                 except Exception as PE:
                     self.log.error('Failed to get property attr:"{0}", err:"{1}"'.format(key, PE))
         return ret_dict
