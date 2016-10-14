@@ -157,7 +157,6 @@ class Eucarc(object):
     def secret_key_id(self, value):
         self._secret_key = value
 
-
     ##############################################################################################
     # Service URLs
     ##############################################################################################
@@ -229,7 +228,6 @@ class Eucarc(object):
     def token_url(self, url):
         self._sts_url = url
 
-
     # SQS
     @property
     def sqs_url(self):
@@ -238,7 +236,6 @@ class Eucarc(object):
     @sqs_url.setter
     def sqs_url(self, url):
         self._sqs_url = url
-
 
     # Cloud Formation
     @property
@@ -257,7 +254,7 @@ class Eucarc(object):
     def cloudformation_url(self, url):
         self._cloudformation_url = url
 
-    #Cloud Watch
+    # Cloud Watch
     @property
     def aws_cloudwatch_url(self):
         return self._cloudwatch_url
@@ -307,7 +304,6 @@ class Eucarc(object):
     @simpleworkflow_url.setter
     def simpleworkflow_url(self, url):
         self._simpleworkflow_url = url
-
 
     ##############################################################################################
     # With the EC2 prefix...
@@ -375,8 +371,6 @@ class Eucarc(object):
     @ec2_secret_key_id.setter
     def ec2_secret_key_id(self, value):
         self._secret_key = value
-
-
 
     ##############################################################################################
     # With the AWS prefix...
@@ -525,36 +519,41 @@ class Eucarc(object):
             try:
                 self.log.debug('Attempting to resolve any unparsed lines with new keydir...')
                 self._from_string(string=self._unparsed_lines, keysdir=self._keysdir)
-            except:
+            except Exception as E:
+                self.log.debug('Ignoring errors while attemping to resolve conf attrs with keys '
+                               'dir:{0}'.format(E))
                 pass
 
-    def _from_ini_file(self, file, user_string=None, region=None, keysdir=None, all=False):
+    def _from_ini_file(self, file_obj, user_string=None, region=None, all_conf=False):
         """
-            Parse the Cloud attributes from this string buffer expecting euca2ools .ini format.
+            Parse the Cloud attributes from this file object expecting euca2ools .ini format.
+            Use of a file object here means values can be parsed from a local file() obj as well
+            as an ssh.sftp() remote file object.
             Populates self with attributes.
 
             :param user_string: 'account_id:username' string used to match config block/section
             :param region: string used to match region section within config
-            :param keysdir: A vaule to replace _KEY_DIR_STR (${EUCA_KEY_DIR}) with, by default
             this is the filepath, but when parsing from a string buffer filepath is unknown
-            :param all: boolean. If True returns a dictionary of the entire config. If false
+            :param all_conf: boolean. If True returns a dictionary of the entire config. If false
                         returns the values for a specific user and region as defined by the
                         provided parameters or within the config files default settings.
             :returns dict of attributes.
         """
         ret_dict = {}
         cf = ConfigParser()
-        with file:
-            file.seek(0)
-            cf.readfp(file)
-            file.seek(0)
-            print 'read from file:\n{0}'.format(file.read())
+        # Read the file into a ConfigParser obj...
+        with file_obj:
+            file_obj.seek(0)
+            cf.readfp(file_obj)
+            file_obj.seek(0)
+            self.log.debug('read from file:\n{0}'.format(file_obj.read()))
+        # Create the dictionary to sort the config parser values into, then sort it...
         cf_dict = {'users':{}, 'regions':{}, 'global':{}}
         for section in cf.sections():
-            print 'got section:{0}'.format(section)
+            self.log.debug('got section: {0}'.format(section))
             sect_info = {}
             for opt in cf.options(section=section):
-                print 'got opt:{0}'.format(opt)
+                self.log.debug('got opt: {0}'.format(opt))
                 sect_info[opt] = cf.get(section=section, option=opt)
             sect_type = section.split()[0]
             if sect_type == 'user':
@@ -565,24 +564,23 @@ class Eucarc(object):
                 cf_dict['global'] = sect_info
             else:
                 cf_dict[section] = sect_info
+        # Default values are values which were found outside any specific ConfigParser sections...
         for key, value in cf.defaults():
             cf_dict[key] = value
-        print 'got cf dict:{0}'.format(cf_dict)
-        if all:
+        self.log.debug('got cf dict:{0}'.format(cf_dict))
+        if all_conf:
             return cf_dict
-
+        # If present, apply the global config section values first...
         if cf_dict['global']:
             for key, value in cf_dict['global'].iteritems():
-                print 'Got global item:{0}={1}'.format(key, value)
                 if key == 'default-region' and not region:
-                    print 'setting region to {0}'.format(value)
                     region = value
                 elif key == 'default-user' and not user_string:
-                    print 'setting key to {0}'.format(value)
                     user_string = value
                 else:
                     ret_dict[key] = value
-        if region:
+        # Next apply any applicable region config section values...
+        def do_region(region, user_string):
             region = str(region).strip()
             ret_dict['region'] = region
             for regkey, reginfo in cf_dict['regions'].iteritems():
@@ -594,14 +592,21 @@ class Eucarc(object):
                         else:
                             ret_dict[key] = value
                     break
+        if region:
+            do_region(region, user_string)
+        # Finally apply any applicable user config section values...
         if user_string:
             for user, user_dict in cf_dict['users'].iteritems():
                 s_type, user_info = user.split()
                 if str(user_info).strip().lower() == user_string:
                     for key, value in user_dict.iteritems():
+                        # If region wasn't provided & the user section specifies a region, use it
+                        if key == 'region' and not region:
+                            region = key
+                            do_region(region, user_string)
                         ret_dict[key] = value
                     break
-
+        # Sanitize the values into a new dictionary to be returned...
         new_dict = {}
         for key, value in ret_dict.iteritems():
             try:
@@ -703,6 +708,7 @@ class Eucarc(object):
         if sshconnection:
             # Assume this is a remote file...
             sftppath = "sftp://{0}@{1}/".format(sshconnection.username, sshconnection.host)
+            remotepath = None
             for remotepath in [filepath, os.path.join(filepath, 'eucarc')]:
                 try:
                     sshconnection.sys('[ -f {0} ]'.format(remotepath), code=0)
@@ -716,7 +722,7 @@ class Eucarc(object):
             keysdir = urljoin(sftppath, keysdir)
             self._keysdir = keysdir
             if is_ini:
-                return self._from_ini_file(file=sshconnection.sftp.open(remotepath),
+                return self._from_ini_file(file_obj=sshconnection.sftp.open(remotepath),
                                            keysdir=keysdir)
             string = sshconnection.sys('cat {0}'.format(remotepath), listformat=False, code=0)
         else:
@@ -732,7 +738,7 @@ class Eucarc(object):
                                      .format(orig_file_path, filepath))
             f = open(filepath)
             if is_ini:
-                return self._from_ini_file(file=f, keysdir=keysdir)
+                return self._from_ini_file(file_obj=f, keysdir=keysdir)
             with f:
                 string = f.read()
         return self._from_string(string, keysdir=keysdir)
