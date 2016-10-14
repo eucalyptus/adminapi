@@ -844,7 +844,7 @@ class AutoCreds(Eucarc):
                 if os.path.exists(filepath):
                     read_f = open(filepath, "r")
             if read_f:
-                conf = self._from_ini_file(file=read_f, all=True)
+                conf = self._from_ini_file(file_obj=read_f, all_conf=True)
         finally:
             if read_f:
                 read_f.close()
