@@ -237,6 +237,7 @@ def packet_test(sender_ssh, receiver_ssh, protocol, dest_ip=None, src_addrs=None
     :param protocol: protocol number for packets ie: 1=icmp, 6=tcp, 17=udp, 132=sctp, etc..
     :param dest_ip: Optional IP for the sender to send packets to, defaults to receiver_ssh.host
     :param src_addrs: Source addresses the receiver will use to filter rx'd packets
+                      Multiple addresses can be provided per comma delimited string
     :param port: optional port to use for sending packets to
     :param bind: option to bind receiver to provided port, maybe needed to rx certain packet types
     :param count: number of packets to send and expect
