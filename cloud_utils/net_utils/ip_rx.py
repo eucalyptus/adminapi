@@ -450,7 +450,11 @@ if __name__ == "__main__":
             if options.verbose >= TRACE:
                 sys.stdout.write('# Waiting for TCP connection...')
                 sys.stdout.flush()
-            connection, ip_info = sock.accept()
+            try:
+                connection, ip_info = sock.accept()
+            except socket.timeout:
+                sys.stderr.write('# ERROR sock.accept() timed out. Last knonw sock timeout:{0}'
+                                 .format(time_remaining))
             ip, srcport = ip_info
             dstport = bport
         while not done:
