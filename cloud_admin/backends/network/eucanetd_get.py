@@ -12,8 +12,32 @@ from os import path
 tag_element_map = {}
 
 
+class ElementList(list):
+
+    def get_by_name(self, name):
+        for x in self:
+            if x.name == name:
+                return x
+
+    def filter(self, filters):
+        filters = filters or {}
+        if not filters:
+            return self
+        else:
+            retlist = ElementList()
+            for x in self:
+                keep = True
+                for key, value in filters:
+                    if not (hasattr(x, key) and getattr(x, key) == value):
+                        keep = False
+                        break
+                if keep:
+                    retlist.append(x)
+            return retlist
+
+
 class BaseElement(object):
-    def __init__(self, xml_element, eucanetd=None):
+    def __init__(self, xml_element, eucanetd=None, log_level='INFO'):
 
         if xml_element is not None and not isinstance(xml_element, Element):
             raise ValueError('xml_element must be of type: {0}.{1}'.format(Element.__module__,
@@ -24,7 +48,7 @@ class BaseElement(object):
         self._name = None
         self._log = Eulogger("{0}:{1}:{2}".format(self.__class__.__name__,
                                                   self.tag or "",
-                                                  self.name or ""))
+                                                  self.name or ""), stdout_level=log_level)
         self._update_from_xml(xml=self._xml)
 
     def _update(self):
@@ -172,6 +196,7 @@ class BaseElement(object):
 
 
     def _parse(self, xml):
+        self.log.debug('Beginning parsing of element with tag:{0}'.format(xml.tag))
         if not isinstance(xml, Element):
             raise ValueError('parse expected Element type for xml, got:{0}, type:{1}'
                              .format(xml, type(xml)))
@@ -184,16 +209,13 @@ class BaseElement(object):
                                .format(attr, value, self))
                 raise E
         if self._is_element_list(xml):
-            self.log.debug('We think: "{0}" is a list...'.format(xml.tag))
-            new_list = []
+            new_list = ElementList()
             sub_child = None
             for sub_child in xml:
                 tag = sub_child.tag
                 tag_class = self._get_class_by_tag(tag)
-                newobj = tag_class(xml_element=sub_child)
+                newobj = tag_class(xml_element=sub_child, log_level=self.log.stdout_level)
                 new_list.append(newobj)
-            self.log.debug('Setting {0} as a list to {1} with {2} length'
-                           .format(sub_child.tag, self.tag, len(new_list)))
             return new_list
         else:
             for child in xml:
@@ -204,10 +226,8 @@ class BaseElement(object):
                         # No additional children so this is the final attribute
                         setattr(self, child.tag, child.text)
                     else:
-                        self.log.debug('We think: "{0}" is a list, child:{1}...'.format(xml.tag,
-                                                                                        child.tag))
                         tag_class = self._get_class_by_tag(child.tag)
-                        newobj = tag_class(None)._parse(child)
+                        newobj = tag_class(None, log_level=self.log.stdout_level)._parse(child)
                         setattr(self, child.tag, newobj)
             return self
 
@@ -220,14 +240,18 @@ class GlobalXML(BaseElement):
         self.vpcs = []
 
     def update(self):
-        xml = self._eucanetd._get_global_xml_root()
-        self._update_from_xml(xml=xml)
+        if not self._eucanetd:
+            self.log.warning('self.eucanetd obj not populated to fetch new xml, '
+                             'must update xml manually')
+        else:
+            xml = self._eucanetd._get_global_xml_root()
+            self._update_from_xml(xml=xml)
 
 
 class EucanetdGet(object):
 
     def __init__(self, host=None, password=None, keypath=None, sshconnection=None, machine=None,
-                 eucalyptus_run_path='/var/run/eucalyptus'):
+                 eucalyptus_run_path='/var/run/eucalyptus', log_level='INFO'):
         if (machine and (sshconnection or host)) or sshconnection and host:
             warning = 'Duplicate and or possibly conflicting machine connection info provided:' \
                       'host:{0}, sshconnection:{1}, machine:{2}'.format(host, sshconnection,
@@ -247,6 +271,7 @@ class EucanetdGet(object):
                                   sshconnection=sshconnection)
         host = host or "unknown"
         self.log = Eulogger("{0}.{1}".format(self.__class__.__name__, host))
+        self.log.set_stdout_loglevel(log_level)
         if not host:
             self.log.warning('Connection info not provided for: {0}.init()'
                              .format(self.__class__.__name__))
@@ -292,7 +317,9 @@ class EucanetdGet(object):
     def global_xml(self):
         try:
             if not self._global_xml:
-                self._global_xml = GlobalXML(xml_element=self._get_global_xml_root())
+                self._global_xml = GlobalXML(xml_element=self._get_global_xml_root(),
+                                             eucanetd=self,
+                                             log_level=self.log.stdout_level)
             return self._global_xml
         except Exception as E:
             self.log.error("{0}\nFailed to create global xml element. Error:{1}"
@@ -317,7 +344,8 @@ class EucanetdGet(object):
 
     def _get_global_xml_string(self, path=None):
         path = path or self.global_xml_path
-        out = self.machine.sys('cat {0}'.format(path), listformat=False)
+        with self.machine.sftp.open(path) as f:
+            out = f.read()
         return out
 
     def show_global_xml(self, path=None, indent=4, printmethod=None, printme=True):
