@@ -4,6 +4,7 @@ from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_utils.system_utils.machine import Machine
 from xml.dom import minidom
 from xml.etree.ElementTree import Element
+import xml.etree.ElementTree as ElementTree
 from prettytable import PrettyTable
 from os import path
 
@@ -12,19 +13,23 @@ tag_element_map = {}
 
 
 class BaseElement(object):
-    def __init__(self, xml_element):
-        xml = xml_element
-        if xml is not None and not isinstance(xml, Element):
+    def __init__(self, xml_element, eucanetd=None):
+
+        if xml_element is not None and not isinstance(xml_element, Element):
             raise ValueError('xml_element must be of type: {0}.{1}'.format(Element.__module__,
                                                                            Element.__name__))
-        self.__tag = None
-        self.__name = None
-        self.__xml = xml
-        self.__log = Eulogger("{0}:{1}:{2}".format(self.__class__.__name__,
-                                                   self.tag or "",
-                                                   self.name or ""))
+        self._xml = xml_element
+        self._eucanetd = eucanetd
+        self._tag = None
+        self._name = None
+        self._log = Eulogger("{0}:{1}:{2}".format(self.__class__.__name__,
+                                                  self.tag or "",
+                                                  self.name or ""))
+        self._update_from_xml(xml=self._xml)
 
-        self.update()
+    def _update(self):
+        raise NotImplementedError('update not implemented for this class:{0}'
+                                  .format(self.__class__.__name))
 
     def __repr__(self):
         try:
@@ -33,7 +38,7 @@ class BaseElement(object):
                 attrs.append(str(self.tag))
             if self.name:
                 attrs.append(str(self.name))
-            return ".".join(attrs)
+            return ":".join(attrs)
         except Exception as E:
             print '{0}\nFailed to create repr, err:{1}'.format(get_traceback(), E)
             self.log.error('{0}\nFailed to create repr, err:{1}'.format(get_traceback(), E))
@@ -55,13 +60,16 @@ class BaseElement(object):
                     pt.add_row([key, str(value)])
                 else:
                     buf = ""
-                    max = (val_len) / (len(str(value[0])) + 1)
+                    max = (val_len) / (len(str(value[0])) + 2)
                     count = 0
                     for v in value:
                         count += 1
                         buf += "{0},".format(v)
                         if not count % max:
                             buf += "\n"
+                        else:
+                            buf += " "
+                    buf.strip(',')
                     pt.add_row([key, buf])
 
 
@@ -72,12 +80,22 @@ class BaseElement(object):
             return pt
 
     @property
+    def xml(self):
+        return getattr(self, '__xml', None)
+
+    @xml.setter
+    def xml(self, xml):
+        if xml != self.xml:
+            self._xml = xml
+            self._update_from_xml(xml=self._xml)
+
+    @property
     def tag(self):
         try:
             if getattr(self, '__tag', None) is None:
                 if getattr(self, '__xml', None) is not None:
-                    self.__tag = self.__xml.tag
-            return self.__tag
+                    self._tag = self.xml.tag
+            return self._tag
         except Exception as E:
             print '{0}\nFailed to fetch tag, err:{1}'.format(get_traceback(), E)
             self.log.error('{0}\nFailed to fetch tag, err:{1}'.format(get_traceback(), E))
@@ -85,23 +103,23 @@ class BaseElement(object):
     @tag.setter
     def tag(self, tag):
         if tag != self.tag:
-            self.__tag = tag
-            self.__log = Eulogger("{0}:{1}:{2}".format(self.__class__.__name__,
-                                                       self.tag or "",
-                                                       self.name or ""))
+            self._tag = tag
+            self._log = Eulogger("{0}:{1}:{2}".format(self.__class__.__name__,
+                                                      self.tag or "",
+                                                      self.name or ""))
 
     @property
     def log(self):
-        return self.__log
+        return self._log
 
     @property
     def name(self):
         try:
             if getattr(self, '__name', None) is None:
-                if getattr(self, '__xml', None) is not None:
-                    if 'name' in self.__xml.attrib:
-                        self.__name =  self.__xml.attrib.get('name')
-            return self.__name
+                if self.xml is not None:
+                    if 'name' in self.xml.attrib:
+                        self._name =  self.xml.attrib.get('name')
+            return self._name
         except Exception as E:
             print '{0}\nFailed to fetch name, err:{1}'.format(get_traceback(), E)
             self.log.error('{0}\nFailed to fetch name, err:{1}'.format(get_traceback(), E))
@@ -109,26 +127,27 @@ class BaseElement(object):
     @name.setter
     def name(self, name):
         if name != self.name:
-            self.__name = name
-            self.__log = Eulogger("{0}:{1}:{2}".format(self.__class__.__name__,
-                                                       self.tag or "",
-                                                       self.name or ""))
+            self._name = name
+            self._log = Eulogger("{0}:{1}:{2}".format(self.__class__.__name__,
+                                                      self.tag or "",
+                                                      self.name or ""))
 
-    def update(self):
+    def _update_from_xml(self, xml):
         attrs = vars(self).keys()
         for var in attrs:
             if not var.startswith('_'):
                 self.__delattr__(var)
-        self.set_defaults()
-        if self.__xml is not None:
-            self.tag = self.__xml.tag
-            self.parse(xml=self.__xml, obj=self)
+        self._set_defaults()
+        if xml is not None:
+            self.tag = xml.tag
+            self._parse(xml=xml)
+        self._xml = xml
 
-    def set_defaults(self):
+    def _set_defaults(self):
         # Method to set default values of any attributes prior to parsing xml
         pass
 
-    def get_class_by_tag(self, tag):
+    def _get_class_by_tag(self, tag):
         if tag in tag_element_map:
             return tag_element_map.get(tag)
         else:
@@ -138,67 +157,71 @@ class BaseElement(object):
         # todo replace this guess work with populated tag_element_map
         if len(xml) > 1:
             for child in xml:
-                if len(xml.findall(child.tag)):
+                if len(xml.findall(child.tag)) > 1:
                     return True
                 else:
                     return False
-        elif not len(xml) and xml.text:
+        elif xml.text:
             return False
+        elif hasattr(self, xml.tag):
+            # If this attribute exists, possibly set by defaults check it's type
+            return isinstance(getattr(self, xml.tag), list)
         elif str(xml.tag).endswith('s'):
+            # There's not enough info available so guess based on the name :-(
             return True
 
-    def parse(self, xml, obj):
+
+    def _parse(self, xml):
         if not isinstance(xml, Element):
             raise ValueError('parse expected Element type for xml, got:{0}, type:{1}'
                              .format(xml, type(xml)))
         # Set attrs from xml attrib dict...
         for attr, value in xml.attrib.iteritems():
             try:
-                setattr(obj, attr, value)
+                setattr(self, attr, value)
             except Exception as E:
                 self.log.error('Failed to set attr:{0}, value:{1} for obj:{2}'
-                               .format(attr, value, obj))
+                               .format(attr, value, self))
                 raise E
-
-        for child in xml:
-            if not child.tag:
-                self.__log.warning('No tag for element:"{0}"'.format(child.__dict__))
-            else:
-                if not len(child):
-                    setattr(obj, child.tag, child.text)
-                elif self._is_element_list(xml):
-                    new_list = []
-                    for sub_child in child:
-                        tag = sub_child.tag
-                        tag_class = self.get_class_by_tag(tag)
-                        newobj = tag_class(xml_element=sub_child)
-                        new_list.append(newobj)
-                    setattr(obj, child.tag, new_list)
+        if self._is_element_list(xml):
+            self.log.debug('We think: "{0}" is a list...'.format(xml.tag))
+            new_list = []
+            sub_child = None
+            for sub_child in xml:
+                tag = sub_child.tag
+                tag_class = self._get_class_by_tag(tag)
+                newobj = tag_class(xml_element=sub_child)
+                new_list.append(newobj)
+            self.log.debug('Setting {0} as a list to {1} with {2} length'
+                           .format(sub_child.tag, self.tag, len(new_list)))
+            return new_list
+        else:
+            for child in xml:
+                if not child.tag:
+                    self._log.warning('No tag for element:"{0}"'.format(child.__dict__))
                 else:
-                    tag_class = self.get_class_by_tag(child.tag)
-                    newobj = tag_class(xml_element=child)
-                    setattr(obj, child.tag, newobj)
-        return obj
+                    if not len(child):
+                        # No additional children so this is the final attribute
+                        setattr(self, child.tag, child.text)
+                    else:
+                        self.log.debug('We think: "{0}" is a list, child:{1}...'.format(xml.tag,
+                                                                                        child.tag))
+                        tag_class = self._get_class_by_tag(child.tag)
+                        newobj = tag_class(None)._parse(child)
+                        setattr(self, child.tag, newobj)
+            return self
 
+class GlobalXML(BaseElement):
 
-
-
-
-
-
-
-class GlobalXML(object):
-
-    def __init__(self, eucanetd):
-        self.eucanetd = eucanetd
+    def set_defaults(self):
         self.root = None
         self.instances = []
         self.security_groups = []
         self.vpcs = []
 
-
-
-
+    def update(self):
+        xml = self._eucanetd._get_global_xml_root()
+        self._update_from_xml(xml=xml)
 
 
 class EucanetdGet(object):
@@ -230,28 +253,15 @@ class EucanetdGet(object):
 
         self.host = host
         self.password = password
-        self.kepath = keypath
+        self.keypath = keypath
         self._machine = machine
         self._global_xml_path = None
+        self._global_xml = None
         self.eucalyptus_run_path = eucalyptus_run_path or ""
         self.eucanetd_pid_file = path.join(self.eucalyptus_run_path,
                                            'eucanetd.pid')
         self.global_xml_version = path.join(self.eucalyptus_run_path,
                                             'global_network_info.version')
-
-
-    @property
-    def global_xml_path(self):
-        # Since this file name may be different in different releases...
-        if not self._global_xml_path:
-            for fname in ['eucanetd_global_network_info.xml', 'global_network_info.xml']:
-                fpath = path.join(self.eucalyptus_run_path, fname)
-                if self.machine.is_file():
-                    self._global_xml_path = fpath
-                    break
-                self._global_xml_path = None
-        return self._global_xml_path
-
 
     @property
     def machine(self):
@@ -273,29 +283,58 @@ class EucanetdGet(object):
             self.log.error('In correct machine type provided: "{0} {1}"'.format(machine,
                                                                                 type(machine)))
 
-    def get_global_xml_string(self, path=None):
+
+    ##############################################################################################
+    #                                  Global XML methods
+    ##############################################################################################
+
+    @property
+    def global_xml(self):
+        try:
+            if not self._global_xml:
+                self._global_xml = GlobalXML(xml_element=self._get_global_xml_root())
+            return self._global_xml
+        except Exception as E:
+            self.log.error("{0}\nFailed to create global xml element. Error:{1}"
+                           .format(get_traceback(), E))
+
+    @global_xml.setter
+    def global_xml(self, global_xml):
+        if global_xml is not None and not isinstance(global_xml, GlobalXML):
+            raise ValueError('Global xml must be of type:{0} or None'.format(GlobalXML.__name__))
+
+    @property
+    def global_xml_path(self):
+        # Since this file name may be different in different releases...
+        if not self._global_xml_path:
+            for fname in ['eucanetd_global_network_info.xml', 'global_network_info.xml']:
+                fpath = path.join(self.eucalyptus_run_path, fname)
+                if self.machine.is_file(fpath):
+                    self._global_xml_path = fpath
+                    break
+                self._global_xml_path = None
+        return self._global_xml_path
+
+    def _get_global_xml_string(self, path=None):
         path = path or self.global_xml_path
-        out = self.machine.sys('cat {0}'.format(path, listformat=False))
+        out = self.machine.sys('cat {0}'.format(path), listformat=False)
         return out
 
     def show_global_xml(self, path=None, indent=4, printmethod=None, printme=True):
-        xml_str = self.get_global_xml(path=path)
-        prettyxml = minidom.parseString(xml_str).toprettyxml(indent=4)
+        i_space = ""
+        indent = indent or 0
+        for x in xrange(0, indent):
+            i_space += " "
+        indent = i_space
+        xml_str = self._get_global_xml_string(path=path)
+        xml = minidom.parseString(xml_str)
         if printme:
             printmethod = printmethod or self.log.info
-            printmethod("\n{0}".format(prettyxml))
+            printmethod("\n{0}".format(xml.toprettyxml(indent=indent)))
         else:
-            return prettyxml
+            return xml.toprettyxml(indent=indent)
 
-    def get_global_xml_root(self, path=None):
-        xml = self.get_global_xml(path=path)
-
-
-
-
-
-
-
-
-
-
+    def _get_global_xml_root(self, path=None):
+        path = path or self.global_xml_path
+        xml = ElementTree.fromstring(self._get_global_xml_string(path=path))
+        return xml
