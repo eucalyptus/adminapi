@@ -16,8 +16,9 @@ class ElementList(list):
 
     def get_by_name(self, name):
         for x in self:
-            if x.name == name:
+            if str(x.name) == str(name):
                 return x
+
 
     def filter(self, filters):
         filters = filters or {}
