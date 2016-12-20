@@ -1537,6 +1537,10 @@ class Machine(object):
         ret = []
         if path is None:
             path = '${PWD}'
+        else:
+            if not (self.is_dir(path) or self.is_file(path)):
+                raise ValueError('Provided path: "{0}" not found on system: "{1}"'
+                                 .format(path, self.hostname))
         if dfargs is None:
             dfargs = ""
         else:
