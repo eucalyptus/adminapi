@@ -7,7 +7,80 @@ from xml.etree.ElementTree import Element
 import xml.etree.ElementTree as ElementTree
 from prettytable import PrettyTable
 from os import path
+"""
+Utility Classes to retrieve and parse eucanetd xml artifacts.
+Basic example:
 
+In [221]: ins = user.ec2.run_image(image=emi, keypair=key, zone='one', group=group,
+                                   vmtype='m1.small')[0]
+
+In [222]: ins
+Out[222]: Instance:i-680c2000
+
+In [223]: from cloud_admin.backends.network.eucanetd_get import EucanetdGet
+
+In [224]: eg = EucanetdGet('10.111.5.10', password='foobar')
+
+In [225]: eg.global_xml.show()
+[2016-11-28 11:11:53,007][INFO][GlobalXML:network-data:]:
+ tag               network-data
+ name              None
+ dhcpOptionSets    BaseElement:dhcpOptionSet:dopt-44aad161,
+                   BaseElement:dhcpOptionSet:dopt-7955ae24,
+                   BaseElement:dhcpOptionSet:dopt-9d1ee333,
+
+ vpcs              BaseElement:vpc:vpc-3bb87024, BaseElement:vpc:vpc-5673b9ed,
+                   BaseElement:vpc:vpc-60ec15aa, BaseElement:vpc:vpc-9254a4b5,
+
+ instances         BaseElement:instance:i-680c2000, BaseElement:instance:i-73e055c3,
+                   BaseElement:instance:i-d8c7e591,
+ internetGateways  BaseElement:internetGateway:igw-3fad72e1,
+                   BaseElement:internetGateway:igw-573f7949,
+                   BaseElement:internetGateway:igw-6453513b,
+                   BaseElement:internetGateway:igw-c1741c3f,
+
+ version           009ecbbc
+ securityGroups    BaseElement:securityGroup:sg-8e78848b,
+                   BaseElement:securityGroup:sg-dbc7440d,
+
+ configuration     BaseElement:property:mode, BaseElement:property:publicIps,
+                   BaseElement:property:enabledCLCIp,
+                   BaseElement:property:instanceDNSDomain,
+                   BaseElement:property:instanceDNSServers, BaseElement:property:mido,
+                   BaseElement:property:clusters,
+
+In [226]: i_xml = eg.global_xml.instances.get_by_name(ins.id)
+
+In [227]: i_xml.show()
+[2016-11-28 11:12:05,771][INFO][BaseElement:instance:i-680c2000]:
+ tag                instance
+ name               i-680c2000
+ macAddress         d0:0d:18:a4:b1:ec
+ subnet             subnet-fb1a2384
+ publicIp           10.116.211.103
+ securityGroups     BaseElement:value,
+ vpc                vpc-9254a4b5
+ ownerId            000122890618
+ privateIp          172.31.12.55
+ networkInterfaces  BaseElement:networkInterface:eni-18a4b1ec,
+
+
+In [228]: i_xml.networkInterfaces[0].show()
+[2016-11-28 11:12:09,371][INFO][BaseElement:networkInterface:eni-18a4b1ec]:
+ tag              networkInterface
+ name             eni-18a4b1ec
+ deviceIndex      0
+ sourceDestCheck  true
+ macAddress       d0:0d:18:a4:b1:ec
+ subnet           subnet-fb1a2384
+ publicIp         10.116.211.103
+ attachmentId     eni-attach-59277cef
+ vpc              vpc-9254a4b5
+ ownerId          000122890618
+ privateIp        172.31.12.55
+ securityGroups   BaseElement:value,
+
+"""
 
 tag_element_map = {}
 
@@ -249,7 +322,7 @@ class GlobalXML(BaseElement):
             self._update_from_xml(xml=xml)
 
 
-class EucanetdGet(object):
+class EucaNetXml(object):
 
     def __init__(self, host=None, password=None, keypath=None, sshconnection=None, machine=None,
                  eucalyptus_run_path='/var/run/eucalyptus', log_level='INFO'):
