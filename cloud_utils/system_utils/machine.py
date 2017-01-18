@@ -127,6 +127,11 @@ class Machine(object):
 
     @hostname.setter
     def hostname(self, hostname):
+        if self.hostname and self.hostname != hostname:
+            if self.ssh and self.ssh.host != hostname:
+                self.log.debug('Hostname change from {0} -> {1}, setting self.ssh to None'
+                               .format(self.hostname, hostname))
+                self.ssh = None
         self._hostname = hostname
 
     @property
@@ -704,10 +709,19 @@ class Machine(object):
         printmethod("\n{0}\n".format(pt))
 
 
-    def get_network_interfaces(self, search_name=None, verbose=False):
+    def get_network_interfaces(self, search_name=None, proc='/proc/net/dev', verbose=False):
         interfaces = {}
         time_stamp = int(time.time())
-        out = self.sys('cat /proc/net/dev', code=0, verbose=verbose)
+        out = None
+        for retry in xrange(0, 3):
+            out = self.sys('cat {0}'.format(proc), code=0, verbose=verbose)
+            if out:
+                break
+            else:
+                time.sleep(1)
+        if not out:
+            raise ValueError('Failed to fetch net interface info from "{0}", output:"{1}"'
+                             .format(proc, out))
         assert isinstance(out, list)
         header_line = out[0]
         headers = []
