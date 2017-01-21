@@ -1506,10 +1506,16 @@ class Machine(object):
             if not ret['dd_full_rec_out'] and not ret['dd_partial_rec_out']:
                 raise CommandExitCodeException('Did not transfer any data using dd cmd:' +
                                                str(ddcmd) + "\nstderr: " + str(outbuf))
-            if ((ret['dd_full_rec_in'] != ret['dd_full_rec_out']) or
-                    (ret['dd_partial_rec_out'] != ret['dd_partial_rec_in'])):
+            # Check in vs out, allow for a difference of 1 record...
+            if (abs(int(ret['dd_full_rec_in']) - int(ret['dd_full_rec_out'])) > 1 or
+                    abs(int(ret['dd_partial_rec_out']) - int(ret['dd_partial_rec_in'])) > 1):
                 raise CommandExitCodeException('dd in records do not match out records in '
-                                               'transfer')
+                                               'transfer. full_in:{0}, part_in:{1} != '
+                                               'full_out:{2}, part_out:{3}'
+                                               .format(ret['dd_full_rec_in'],
+                                                       ret['dd_partial_rec_in'],
+                                                       ret['dd_full_rec_out'],
+                                                       ret['dd_partial_rec_out']))
             self.log.debug('Done with dd, copied:{0} bytes, {1} fullrecords, {2} partrecords - '
                            'over elapsed:{3}'.format(ret['dd_bytes'],
                                                      ret['dd_full_rec_out'],
