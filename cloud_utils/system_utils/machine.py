@@ -715,11 +715,12 @@ class Machine(object):
         out = None
         retry = 0
         orig_verbose = verbose
-        for retry in xrange(0, 3):
+        for retry in xrange(0, 5):
             if retry:
                 verbose = True
                 self.log.debug('Retry:{0}, attempting to fetch data from:"{1}"'
                                .format(retry, proc))
+                self.sys('ifconfig', verbose=True)
             out = self.sys('cat {0}'.format(proc), code=0, verbose=verbose)
             if out:
                 break
