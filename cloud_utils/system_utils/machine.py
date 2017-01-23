@@ -713,15 +713,22 @@ class Machine(object):
         interfaces = {}
         time_stamp = int(time.time())
         out = None
+        retry = 0
+        orig_verbose = verbose
         for retry in xrange(0, 3):
+            if retry:
+                verbose = True
+                self.log.debug('Retry:{0}, attempting to fetch data from:"{1}"'
+                               .format(retry, proc))
             out = self.sys('cat {0}'.format(proc), code=0, verbose=verbose)
             if out:
                 break
             else:
-                time.sleep(1)
+                time.sleep(retry + 1)
+        verbose = orig_verbose
         if not out:
-            raise ValueError('Failed to fetch net interface info from "{0}", output:"{1}"'
-                             .format(proc, out))
+            raise ValueError('Failed to fetch net interface info from "{0}", output:"{1}", '
+                             'retries:"{2}"'.format(proc, out, retry))
         assert isinstance(out, list)
         header_line = out[0]
         headers = []
