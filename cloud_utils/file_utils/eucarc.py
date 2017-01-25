@@ -305,6 +305,14 @@ class Eucarc(object):
     def simpleworkflow_url(self, url):
         self._simpleworkflow_url = url
 
+    @property
+    def swf_url(self):
+        return self._simpleworkflow_url
+
+    @swf_url.setter
+    def swf_url(self, url):
+        self._simpleworkflow_url = url
+
     ##############################################################################################
     # With the EC2 prefix...
     ##############################################################################################
