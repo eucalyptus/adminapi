@@ -18,6 +18,7 @@ from cloud_utils.log_utils import BackGroundColor, TextStyle, ForegroundColor
 from cloud_utils.log_utils.eulogger import Eulogger
 from cloud_utils.system_utils.machine import Machine
 from cloud_admin.systemconnection import SystemConnection
+from distutils.version import StrictVersion
 from boto.ec2.group import Group as BotoGroup
 from boto.ec2.instance import Instance
 from boto.ec2.securitygroup import SecurityGroup, IPPermissions
@@ -28,12 +29,24 @@ from json import loads as json_loads
 from kazoo.client import KazooClient
 from prettytable import PrettyTable
 import json
+import pkg_resources
 import socket
 import time
-import urllib
+from urllib import urlencode
+import urllib2
 import re
 import copy
-
+"""
+versions() borrowed from:
+http://stackoverflow.com/questions/4888027/
+python-and-pip-list-all-versions-of-a-package-thats-available
+"""
+def versions(package_name):
+    url = "https://pypi.python.org/pypi/%s/json" % (package_name,)
+    data = json.load(urllib2.urlopen(urllib2.Request(url)))
+    versions = data["releases"].keys()
+    versions.sort(key=StrictVersion)
+    return versions
 
 
 class ArpTable(resource_base.ResourceBase):
@@ -115,6 +128,10 @@ class Midget(object):
             clc_ip = clc_ip
             self.eucaconnection = SystemConnection(hostname=clc_ip, password=clc_password,
                                                    log_level=euca_log_level)
+        try:
+            self.check_mido_client_to_server_versions()
+        except Exception as E:
+            self.log.debug('{0}\nError while checking mido version:{1}'.format(get_traceback(), E))
 
         self.default_indent = ""
         self._euca_instances = {}
@@ -126,6 +143,59 @@ class Midget(object):
 
     def info(self, msg):
         self.log.info(msg)
+
+    def check_mido_client_to_server_versions(self, rpm_string=None):
+        mido_rpm = rpm_string
+        if not mido_rpm:
+            mido_rpm = self.eucaconnection.clc_machine.sys('rpm -qa midonet-cluster',
+                                                           listformat=False).strip()
+        if not mido_rpm:
+            mido_rpm = self.eucaconnection.clc_machine.sys('rpm -qa midolman',
+                                                           listformat=False).strip()
+        if not mido_rpm:
+            self.log.warning(red('Midonet may not be installed on the expected host:{0}'
+                                 .format(self.eucaconnection.clc_machine.hostname)))
+            return None
+        client_versions = versions('midonetclient')
+        if not client_versions:
+            self.log.warning(red('No midonetclient python client versions found to check against'
+                               'installed pkgs?'))
+            return None
+        current_client_ver = pkg_resources.get_distribution("midonetclient").version
+        matches = []
+        client_nums = []
+        max = 0
+        self.log.debug('Looking for best client fit. Client vers:"{0}", pkg ver:"{1}"'
+                       .format(", ".join(client_versions), mido_rpm))
+
+        for ver in client_versions:
+            client_num = ver.split('.')
+            client_nums.append(client_num)
+            if len(client_num) > max:
+                max = len(client_num)
+
+        for x in xrange(0, max):
+            for ver in client_nums:
+                if len(ver) >= x:
+                    verstr = ".".join(ver[0:(len(ver) - x)])
+                    if verstr and re.search(verstr, mido_rpm):
+                        matches.append(".".join(ver))
+            if matches:
+                break
+        self.log.debug('Pkg:"{0}", possible clients matches:"{1}"'
+                       .format(mido_rpm, ",".join(matches)))
+        if current_client_ver in matches:
+            self.log.debug('Current midonet client ver:{0} seems to be a good fit for:{1}'
+                           .format(current_client_ver, mido_rpm))
+        else:
+            self.log.warning(red('Mido version:"{0}" may not be compatible with Midolman '
+                                 'pkg version found:{1}.\n'
+                                 'See available versions using: '
+                                 '"pip search midonetclient"\n"'
+                                 'Install with:\n'
+                                 '"pip install midonetclient==<correct version>"'
+                                 .format(current_client_ver, mido_rpm)))
+
 
     def set_mido_log_level(self, level):
         """
@@ -148,7 +218,8 @@ class Midget(object):
                          ssh_host=None, depth=0, max_redirects=5, mido_json_ver=None,
                          mido_api_request_type = None,
                          *args, **kwargs):
-        """Process a http rest request with input and output json strings.
+        """
+        Process a http rest request with input and output json strings.
 
         Sends json string serialized from body to uri with verb method and returns
         a 2-tuple made of http response, and content deserialized into an object.
@@ -223,7 +294,7 @@ class Midget(object):
                        "trying ver:{2}"
                        .format(mido_api_request_type, original_version, trying_version))
         if query:
-            uri += '?' + urllib.urlencode(query)
+            uri += '?' + urlencode(query)
         data = json.dumps(body) if body is not None else '{}'
 
         try:
