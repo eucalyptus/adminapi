@@ -249,7 +249,7 @@ class Midget(object):
         if header_value:
             # If the mido request type string wasn't provided, find it in the uri and header...
             # Example: "BRIDGES.PORT"
-            if not mido_api_request_type:
+            if uri and not mido_api_request_type:
                 # Use the request and header request types for future caching...
                 uri_match = re.search(r"(http.*midonet-api)/(\w+)/*(.*$)", uri)
                 if uri_match:
@@ -763,7 +763,7 @@ class Midget(object):
     def get_router_port_for_subnet(self, router, cidr):
         assert cidr
         for port in router.get_ports():
-            network = "{0}/{1}".format(port.get_network_address(), port.get_network_length())
+            network = "{0}/{1}".format(port.dto.get('networkAddress', None), port.dto.get('networkLength', None))
             if str(network) == str(cidr):
                 return port
         return None
@@ -823,7 +823,7 @@ class Midget(object):
         bgps = []
         if hasattr(port, 'get_bgps'):
             bgps = port.get_bgps()
-        else:
+        elif port.dto.get('bgps', None):
             header = (getattr(vendor_media_type,
                               'APPLICATION_BGP_COLLECTION_JSON', None) or
                       "application/vnd.org.midonet.collection.Bgp-v1+json")
@@ -846,28 +846,40 @@ class Midget(object):
         pt.max_width['PEER ID'] = 20
         bgps = 0
         try:
-            if port.dto.get('bgps'):
+            if port.dto.get('bgps', None):
                 bgps = self.get_bgps_for_port(port)
                 if bgps:
                     bgps = len(bgps)
                 else:
                     bgps = 0
+            elif port.dto.get('bgpStatus', None):
+                bgps = True
         except Exception, E:
             bgps = 'ERROR'
             self.info('Error fetching bgps from port:{0}, err"{1}'.format(port.get_id(), E))
-
+        if port.dto.get('networkAddress', None) is not None:
+            netaddr = "{0}/{1}".format(port.dto.get('networkAddress', None),
+                                       port.dto.get('networkLength', None))
+        else:
+            netaddr = None
         pt.add_row([port.get_id(),
                     bgps,
-                    port.get_port_address(),
-                    "{0}/{1}".format(port.get_network_address(), port.get_network_length()),
-                    port.get_port_mac(),
+                    port.dto.get('portAddress', None),
+                    netaddr,
+                    port.dto.get('portMac', None),
                     port.get_type(),
                     port.get_admin_state_up(),
                     port.get_peer_id()])
         buf += self._indent_table_buf(str(pt))
         if showbgp and bgps:
-            buf += self._bold("{0}PORT BGP INFO:\n".format(indent), 4)
-            buf += self._indent_table_buf(str(self.show_bgps(self.get_bgps_for_port(port),
+            if port.dto.get('bgpStatus', None):
+                # 5.2 has bgpStatus
+                buf += self._bold("{0}PORT {1} BGP INFO:\n".format(indent, port.get_id()), 4)
+                buf += self._indent_table_buf(str(port.dto.get('bgpStatus')))
+            else:
+                #1.9 has bgps
+                buf += self._bold("{0}PORT BGP INFO:\n".format(indent), 4)
+                buf += self._indent_table_buf(str(self.show_bgps(self.get_bgps_for_port(port),
                                                              printme=False)))
         if showchains:
             if port.get_inbound_filter_id():
@@ -911,16 +923,18 @@ class Midget(object):
                             bgps = len(bgps)
                         else:
                             bgps = 0
+                    elif port.dto.get('bgpStatus', None):
+                        bgps = True
                 except Exception, E:
                     bgps = 'ERROR'
                     self.info('Error fetching bgps from port:{0}, err"{1}'
                               .format(port.get_id(), E))
                 pt.add_row([port.get_id(),
                             bgps,
-                            port.get_port_address(),
-                            "{0}/{1}".format(port.get_network_address(),
-                                             port.get_network_length()),
-                            port.get_port_mac(),
+                            port.dto.get('portAddress', None),
+                            "{0}/{1}".format(port.dto.get('networkAddress', None),
+                                             port.dto.get('networkLength', None)),
+                            port.dto.get('portMac', None),
                             port.get_type(),
                             port.get_admin_state_up(),
                             port.get_peer_id()])
@@ -950,8 +964,11 @@ class Midget(object):
                                         self.show_chain(self.mapi.get_chain(inbound_filter_id),
                                                         printme=False)))
                     if bgps:
-                        buf += self._link_table_buf(self.show_bgps(self.get_bgps_for_port(port),
-                                                                   printme=False))
+                        if port.dto.get('bgpStatus', None):
+                            buf += self._link_table_buf(str(port.dto.get('bgpStatus')))
+                        else:
+                            buf += self._link_table_buf(self.show_bgps(self.get_bgps_for_port(port),
+                                                                       printme=False))
 
             if pt:
                 buf += str(pt) + '\n'
@@ -1026,9 +1043,9 @@ class Midget(object):
             status_pt = PrettyTable(['PORT HOST:{0} ({1} : {2} : {3}/{4})'
                                      .format(hostname,
                                              interface_name,
-                                             port.get_port_address(),
-                                             port.get_network_address(),
-                                             port.get_network_length())])
+                                             port.dto.get('portAddress', None),
+                                             port.dto.get('networkAddress', None),
+                                             port.dto.get('networkLength', None))])
             status_pt.align = 'l'
             status_pt.vrules = 2
             status_pt.hrules = 3
