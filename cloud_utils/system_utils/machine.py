@@ -427,15 +427,31 @@ class Machine(object):
         except:
             pass
 
-    def sys(self, cmd, verbose=True, timeout=120, listformat=True, code=None, net_namespace=None):
+    def sys(self, cmd, verbose=True, timeout=120, listformat=True, code=None,
+            get_pty=True, invoke_shell=False, net_namespace=None):
         '''
         Issues a command against the ssh connection to this instance
-        Returns a list of the lines from stdout+stderr as a result of the command
+        Returns output from stdout+stderr as a result of the command.
+        Issue a command cmd and return output
+
+        :param cmd: - mandatory - string representing the command to be run  against the remote
+                      ssh session
+        :param verbose: - optional - will default to global setting, can be set per cmd() as
+                          well here
+        :param timeout: - optional - integer used to timeout the overall cmd() operation in
+                          case of remote blockingd
+        :param listformat:  - optional - format output into single buffer or list of lines
+
+        :param code: - optional - expected exitcode, will except if cmd's  exitcode does not
+                       match this value
+        :param get_pty: Request a pseudo-terminal from the server.
+        :param invoke_shell: Request a shell session on this channel
+        :param net_namespace: Network name space to issue command in on remote machine
         '''
         if net_namespace is not None:
             cmd = 'ip netns exec {0} {1}'.format(net_namespace, cmd)
         return self.ssh.sys(cmd, verbose=verbose, timeout=timeout, listformat=listformat,
-                            code=code)
+                            get_pty=get_pty, invoke_shell=invoke_shell, code=code)
 
     def cmd(self, cmd, verbose=True, timeout=120, listformat=False, net_namespace=None,
             cb=None, cbargs=[]):
