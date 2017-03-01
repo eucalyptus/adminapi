@@ -18,7 +18,8 @@ class RemoteCommands(object):
     """
     
     def __init__(self, hostfile=None, ips=None, password=None, keypath=None, username='root',
-                 command='echo "ALIVE', timeout=5, thread_count=20, log_level='debug'):
+                 command='echo "ALIVE', timeout=5, no_pty=False, thread_count=20,
+                 log_level='debug'):
 
         self.parser = argparse.ArgumentParser(
             description='Run a command on list of remote hosts',
@@ -43,6 +44,8 @@ class RemoteCommands(object):
                                  'connections + execute commands')
         self.parser.add_argument('--thread-count', default=thread_count, type=int,
                             help='Number of threads used to run commands on hosts')
+        self.parser.add_argument('--no-pty', default=no_pty, action='store_false',
+                                 help='Do not request a pseudo-terminal from the server.')
         self.parser.add_argument('-l', '--log-level', default=log_level,
                             help='Loglevel')
         if ips or hostfile:
@@ -96,7 +99,8 @@ class RemoteCommands(object):
                                         keypath=self.keypath, debug_connect=True,
                                         timeout=self.args.timeout, verbose=True, logger=logger)
                     logger.debug('host: {0} running command:{1} '.format(host, command))
-                    out = ssh.cmd(str(command), listformat=True, timeout=self.args.timeout)
+                    out = ssh.cmd(str(command), listformat=True, timeout=self.args.timeout,
+                                  get_pty=not(self.args.no_pty))
                     logger.debug('Done with host: {0}'.format(host))
 
                     with lock:

@@ -421,9 +421,9 @@ class SshConnection():
             str(cmd) + "'", elapsed=elapsed)
 
     def sys(self, cmd, verbose=False, timeout=120, listformat=True, enable_debug=False, code=None,
-            check_alive=True):
+            check_alive=True, invoke_shell=False, get_pty=True,):
         """
-        Issue a command cmd and return output in list format
+        Issue a command cmd and return output
 
         :param cmd: - mandatory - string representing the command to be run  against the remote
                       ssh session
@@ -437,9 +437,13 @@ class SshConnection():
                        match this value
         :param check_alive - optional - bool, If true will check if the transport is alive,
                              and re-establish it if not before attempting to send the command.
+        :param get_pty: Request a pseudo-terminal from the server.
+        :param invoke_shell: Request a shell session on this channel
+
         """
         out = self.cmd(cmd, verbose=verbose, timeout=timeout, listformat=listformat,
-                       enable_debug=enable_debug, check_alive=check_alive)
+                       enable_debug=enable_debug, get_pty=get_pty, invoke_shell=invoke_shell,
+                       check_alive=check_alive)
         output = out['output']
         if code is not None and out['status'] != code:
             if verbose:
@@ -494,6 +498,8 @@ class SshConnection():
                     instead of cbargs
         :param cbargs: - optional - list of arguments to be appended to output buffer and
                          passed to cb
+        :param get_pty: Request a pseudo-terminal from the server.
+        :param invoke_shell: Request a shell session on this channel
         :param enable_debug: - optional - boolean, if set will use self.debug() to print
                                additional messages during cmd()
         :param check_alive - optional - bool, If true will check if the transport is alive,
