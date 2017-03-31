@@ -180,7 +180,7 @@ class RemoteCommands(object):
         time.sleep(self.maxwait + .1)
         return self.results
 
-    def show_results(self, results=None, max_width=None, printmethod=None):
+    def show_results(self, results=None, expected_status=0, max_width=None, printmethod=None):
         results = results or self.results
         if not max_width:
             max_height, max_width = get_terminal_size()
@@ -218,7 +218,7 @@ class RemoteCommands(object):
                                                             length=max_width))
                     output += part
             status = result.get('status')
-            if status == 0:
+            if int(status) == int(expected_status):
                 color = green
             else:
                 color = red
