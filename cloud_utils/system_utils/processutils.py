@@ -3,6 +3,8 @@ from multiprocessing import Process
 from sys import stderr
 from cloud_utils.log_utils import red, get_traceback
 import os
+import re
+import sys
 from select import select
 import traceback
 import threading
@@ -13,13 +15,16 @@ from cloud_utils.log_utils import format_log_level, get_logger_method_for_level
 
 def local_cmd(cmd, verbose=True, timeout=120, inactivity_timeout=None,
               listformat=True, code=None, logger=None,
-              log_level='DEBUG', shell=False, chunk_size=4096):
+              log_level='DEBUG', shell=False, stdout_cb=None, stderr_cb=None, chunk_size=4096):
     """
            Run a command on the localhost
            :param cmd: str representing the command to be run
            :print_method: method used to print errors/output. ie:'logger.warn' Default is print().
            :return: :raise: CalledProcessError on non-zero return code
            """
+    if not shell and re.search('[;&|]', cmd):
+        warning = 'Cmd:"{0}". Compound commands require "shell" flag\n'.format(cmd)
+        raise ValueError(warning)
     if not shell:
         args = cmd.split()
     else:
@@ -41,7 +46,9 @@ def local_cmd(cmd, verbose=True, timeout=120, inactivity_timeout=None,
         ret_dict.update(monitor_subprocess_io(process, listformat=listformat, verbose=verbose,
                                               chunk_size=chunk_size, logger=logger,
                                               log_level=log_level, timeout=timeout,
-                                              inactivity_timeout=inactivity_timeout))
+                                              inactivity_timeout=inactivity_timeout,
+                                              stdout_callback=stdout_cb,
+                                              stderr_callback=stderr_cb))
         elapsed = time.time() - start
         while elapsed <= timeout and process.poll() is None:
             elapsed = time.time() - start
@@ -72,7 +79,7 @@ def local_cmd(cmd, verbose=True, timeout=120, inactivity_timeout=None,
             ret_dict['elapsed'] = elapsed
 
     process = None
-    if ret_dict['status'] != code:
+    if code is not None and ret_dict['status'] != code:
         error = CalledProcessCodeError(ret_dict['status'], cmd, expected_code=code)
         if ret_dict['stderr']:
             error.output = ret_dict['stderr']
@@ -143,13 +150,9 @@ def monitor_subprocess_io(process,
             show_n_flush_buf = True
         if fd_mon[fd]['last_read'] is None:
             fd_mon[fd]['last_read'] = last_read
-        #else:
-        #    if last_read - fd_mon[fd]['last_read'] > 1:
-        #        print 'last read over 1 second, flushing... Elapsed:{0}'.format(last_read - fd_mon[fd]['last_read'])
-        #        show_n_flush_buf = True
         if show_n_flush_buf:
             prefix = "({0}): ".format(fd_mon[fd]['name'])
-            log_method("{0}{1}".format(prefix, fd_mon[fd]['buf']))
+            log_method("{0}{1}".format(prefix, fd_mon[fd]['buf'].strip('\n')))
             fd_mon[fd]['buf'] = ""
             fd_mon[fd]['last_read'] = last_read
 
@@ -166,7 +169,6 @@ def monitor_subprocess_io(process,
                                    .format(timeout))
             if inactivity_timeout > (timeout - elapsed):
                 inactivity_timeout = (timeout - elapsed)
-            #print "select loop, timeout:{0} inactivity timeout:{1}".format(timeout, inactivity_timeout)
             # Make sure inactivity timeout is > 0, or None here.
             reads, writes, errors = select(read_fds, [], [],
                                            inactivity_timeout)
@@ -176,12 +178,10 @@ def monitor_subprocess_io(process,
                         # check for each fds in read ready list
                         last_read = time.time()
                         fileobj = fd_mon[fd]['fileobj']
-                        #print 'Got read fd:{0}, name:{1}'.format(fd, fd_mon[fd]['name'])
                         if fileobj.closed:
                             chunk = None
                         else:
                             chunk = fileobj.read(1)
-                        #print 'Read chunk:"{0}"'.format(chunk)
                         if chunk:
                             fd_mon[fd]['buf'] += chunk
                             show_output(fd)
@@ -190,12 +190,9 @@ def monitor_subprocess_io(process,
                             ret_dict[fd_mon[fd]['name']] += chunk
                             ret_dict['io_bytes'] += len(chunk)
                         else:
-                        #elif fd == sub_stdout_fd:
                             read_fds.remove(fd)
-                            #print 'Got a done condition for: {0}'.format(fd_mon[fd]['name'])
                             if fd_mon[fd]['cb']:
                                 ret_dict['cb_result'] = fd_mon[fd]['cb'].flush()
-                            #done = True
                     else:
                         log_method('None of the readfds have appeared in the read ready list '
                                    'for the inactivity period:"{0}"'.format(inactivity_timeout))
@@ -347,3 +344,16 @@ class CalledProcessCodeError(subprocess.CalledProcessError):
         if self.output:
             msg += 'Output:"{0}"'.format(self.output)
         return msg
+
+
+class TestProcessCallBack(object):
+
+    def __init__(self):
+        pass
+
+    def write(self, buf):
+        print 'CB got buf:"{0}""'.format(buf)
+        return buf
+
+    def flush(self):
+        print 'CB all done'
