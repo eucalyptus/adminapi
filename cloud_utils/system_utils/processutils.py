@@ -34,14 +34,17 @@ def local_cmd(cmd, verbose=True, timeout=120, inactivity_timeout=None,
     output = None
     inactivity_timeout = inactivity_timeout or timeout
     fd = None
-    ret_dict = {'stdout': None,
+    ret_dict = {'cmd': cmd,
+                'stdout': None,
                 'stderr': None,
                 'io_bytes': 0,
-                'timeout': timeout}
+                'timeout': timeout,
+                'process': None}
     start = time.time()
     try:
         process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                    bufsize=4096, shell=shell)
+        ret_dict['process'] = process
 
         ret_dict.update(monitor_subprocess_io(process, listformat=listformat, verbose=verbose,
                                               chunk_size=chunk_size, logger=logger,
@@ -319,14 +322,6 @@ def wait_process_in_thread(pid):
         return pid_thread
 
 
-def check_and_waitpid(pid, status):
-    if pid_exists(pid):
-        try:
-            os.waitpid(pid, status)
-        except OSError:
-            pass
-
-
 # Exception classes used by this module.
 class CalledProcessCodeError(subprocess.CalledProcessError):
     """This exception is raised when a process run by check_call() or
@@ -346,14 +341,15 @@ class CalledProcessCodeError(subprocess.CalledProcessError):
         return msg
 
 
-class TestProcessCallBack(object):
+class ProcessCallBack(object):
 
     def __init__(self):
         pass
 
     def write(self, buf):
-        print 'CB got buf:"{0}""'.format(buf)
         return buf
 
     def flush(self):
-        print 'CB all done'
+        pass
+
+
