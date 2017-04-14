@@ -44,7 +44,8 @@
 import os
 import sys
 import logging
-import time
+from cloud_utils.log_utils import format_log_level
+
 
 
 class Eulogger(logging.Logger):
@@ -192,11 +193,7 @@ class Eulogger(logging.Logger):
 
     @classmethod
     def format_log_level(self, level, default=logging.DEBUG):
-        if isinstance(level, basestring):
-            return getattr(logging, level.upper(), default)
-        if isinstance(level, int):
-            return level
-        return default
+        return format_log_level(level=level, default=default)
 
     def close(self):
         for handler in self.handlers:

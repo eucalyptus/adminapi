@@ -1,4 +1,6 @@
 
+import logging
+import operator
 import os
 import re
 import sys
@@ -18,6 +20,13 @@ _EUTESTER_FORCE_ANSI_ESCAPE = False
 # This can also be set as an env var
 _EUTESTER_NON_STANDARD_ANSI_SUPPORT = False
 
+level_map = {'notset': logging.NOTSET,
+             'debug': logging.DEBUG,
+             'info': logging.INFO,
+             'warn': logging.WARN,
+             'warning': logging.WARNING,
+             'error': logging.ERROR,
+             'critical': logging.CRITICAL}
 
 class TextStyle():
     BOLD = 1
@@ -363,3 +372,75 @@ def get_line(length=None):
     for x in xrange(0,int(length-2)):
         line += "-"
         return "\n" + line + "\n"
+
+def get_logger_method_for_level(level, logger):
+    """
+    Attempts to return the logger obj's method used for the provided log level. 
+    For custom log levels this will return the equiv method for the last highest built in log
+    level. 
+    :param level: string or int representing the log level
+    :param logger: logger obj
+    :return: logger method
+    """
+    orig_level = level
+    if not isinstance(logger, logging.Logger):
+        raise ValueError('logger must be of type:{0}. Got:{1}/{2}'
+                         .format(logging.Logger, logger, type(logger)))
+    # First sanitize the provided level, allow for custom levels here...
+    if isinstance(level, basestring):
+        level = level.lower()
+        if level in level_map:
+            level = level_map[level]
+        else:
+            raise ValueError('Log level named: "{0}" not found'.format(orig_level))
+    else:
+        try:
+            level = int(level)
+        except TypeError as TE:
+            raise TypeError('Invalid Log Level. {0}'.format(TE.message))
+        if level not in level_map.values():
+            sorted_map = sorted(level_map.items(), key=operator.itemgetter(1))
+            last = sorted_map.pop(0)
+            for lmap in sorted_map:
+                if lmap[1] > level:
+                    break
+                else:
+                    last = lmap[1]
+            level = last
+    # Find the corresponding logger method for level
+    for lname, lvalue in level_map.iteritems():
+        if level == lvalue:
+            break
+        else:
+            lname = None
+    if not lname:
+        raise ValueError('Error looking up name from INT log level:{0}'.format(level))
+    if hasattr(logger, lname):
+        lmethod = getattr(logger, lname)
+        if callable(lmethod):
+            return lmethod
+    raise ValueError('Logger does not have a method named: {0}'.format(lname))
+
+
+def format_log_level(level, default=logging.DEBUG):
+    """
+    Attempts to sanitize the level argument into an int representing a log level. In the case that
+    a string is provided as the level, the string will be compared to the logging package's 
+    pre-defined levels to find the matching INT log level. If one is not found a 'default' can 
+    be provided, or if no default is provided a ValueError will be raised. 
+    :param level: string or int
+    :param default: int
+    :return: int
+    """
+    if isinstance(level, basestring):
+        level_num = getattr(logging, level.upper(), default)
+        if level_num is None:
+            raise ValueError('Invalid log level:"{0}", and no default provided'.format(level))
+        else:
+            level = int(level_num)
+    if isinstance(level, int):
+        return level
+    if default is None:
+        raise ValueError('Invalid log level:"{0}", and no default provided'.format(level))
+    else:
+        return default
