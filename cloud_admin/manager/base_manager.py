@@ -3,6 +3,7 @@ from flask import Flask, jsonify, abort, request
 from werkzeug.exceptions import BadRequest
 from datetime import datetime, timedelta
 from cloud_utils.log_utils import format_log_level
+from cloud_utils.system_utils.processutils import local_cmd
 import json
 
 def json_serial(obj):
@@ -22,10 +23,10 @@ class BaseManager(object):
         self.logger = self.app.logger
         self.logger.setLevel(format_log_level(log_level))
         self._config = {}
-        self.load_rules()
+        self.load_url_rules()
         self.state = 'alive'
 
-    def load_rules(self):
+    def load_url_rules(self):
         self.app.add_url_rule('/status/<status_attr>', None, self.get_status, methods=['GET'])
         self.app.add_url_rule('/status', None, self.get_status, strict_slashes=False,
                               methods=['GET'])
@@ -35,6 +36,9 @@ class BaseManager(object):
         self.app.add_url_rule('/', None, self.get_api, methods=['GET'])
         self.app.add_url_rule('/loglevel', None, self.set_log_level, strict_slashes=False,
                               methods=['GET', 'PUT'])
+        self.app.add_url_rule('/execute', None, self.execute, strict_slashes=False,
+                              methods=['GET', 'PUT'])
+
 
     def __repr__(self):
         return str(self.name)
@@ -100,8 +104,43 @@ class BaseManager(object):
     def update_config(self):
         raise NotImplementedError()
 
+    def execute(self):
+        res = {'run_error': 'Command not run'}
+        try:
+            j = request.get_json(force=True)
+        except BadRequest as BE:
+            self.logger.error('Error:"{0}"'.format(BE))
+            BE.description += ' Is the json formatted correctly in the request?'
+            raise BE
+        if not j or 'command' not in j:
+            self.logger.error('"command" not present in request.json:"{0}"'
+                              .format(j))
+            abort(400, '"command" not present in request.json"')
+        try:
+            kwargs = {}
+            kwargs['cmd'] = j['command']
+            timeout = j.get('timeout', None)
+            if timeout is not None:
+                kwargs['timeout'] = timeout
+            kwargs['shell'] = self.format_bool(j.get('shell', False))
+            kwargs['verbose'] = self.format_bool(j.get('verbose', True))
+            res = local_cmd(**kwargs) or {}
+            if 'process' in res:
+                res.pop('process')
+        except Exception as E:
+            self.logger.error(E)
+            abort(500, str(E))
+        return jsonify(res)
+
     def test(self):
         return jsonify({'test worked': True})
+
+
+    def format_bool(self, value):
+        if value in [True, 'true', 'True']:
+            return  True
+        else:
+            return False
 
 
 

@@ -39,12 +39,15 @@ def local_cmd(cmd, verbose=True, timeout=120, inactivity_timeout=None,
                 'stderr': None,
                 'io_bytes': 0,
                 'timeout': timeout,
-                'process': None}
+                'process': None,
+                'pid': None,
+                'run_error': None}
     start = time.time()
     try:
         process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                    bufsize=4096, shell=shell)
         ret_dict['process'] = process
+        ret_dict['pid'] = process.pid
         process.cmd = cmd
         ret_dict.update(monitor_subprocess_io(process, listformat=listformat, verbose=verbose,
                                               chunk_size=chunk_size, logger=logger,
