@@ -127,6 +127,9 @@ class BaseManager(object):
             res = local_cmd(**kwargs) or {}
             if 'process' in res:
                 res.pop('process')
+            timeout_error = res.get('timeout_error', None)
+            if timeout_error:
+                res['timeout_error'] = str(timeout_error)
         except Exception as E:
             self.logger.error(E)
             abort(500, str(E))

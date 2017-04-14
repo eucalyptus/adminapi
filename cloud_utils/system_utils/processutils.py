@@ -4,6 +4,7 @@ from sys import stderr
 from cloud_utils.log_utils import red, get_traceback
 import os
 import re
+import signal
 import sys
 from select import select
 import traceback
@@ -39,9 +40,11 @@ def local_cmd(cmd, verbose=True, timeout=120, inactivity_timeout=None,
                 'stderr': None,
                 'io_bytes': 0,
                 'timeout': timeout,
+                'inactivity_timeout': inactivity_timeout,
                 'process': None,
                 'pid': None,
-                'run_error': None}
+                'run_error': None,
+                'timeout_error': None}
     start = time.time()
     try:
         process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -55,12 +58,16 @@ def local_cmd(cmd, verbose=True, timeout=120, inactivity_timeout=None,
                                               inactivity_timeout=inactivity_timeout,
                                               stdout_callback=stdout_cb,
                                               stderr_callback=stderr_cb))
+        if ret_dict['timeout_error']:
+            os.kill(process.pid, signal.SIGINT)
+            timeout = 0
         elapsed = time.time() - start
         while elapsed <= timeout and process.poll() is None:
             elapsed = time.time() - start
             wait_timeout = timeout - elapsed
             if wait_timeout <= 0:
                 wait_timeout = 1
+        if process.poll() is not None:
             output, unused_err = process.communicate(timeout=wait_timeout)
     finally:
         elapsed = time.time() - start
@@ -76,17 +83,20 @@ def local_cmd(cmd, verbose=True, timeout=120, inactivity_timeout=None,
                 stderr.flush()
             if process.returncode is None:
                 try:
+                    os.kill(process.pid, signal.SIGINT)
                     process.terminate()
                 except Exception as E:
                     stderr.write('{0}\nCmd:{1}, err attempting to terminate. err:"{2}"'
                                  .format(get_traceback(), cmd, E))
                     stderr.flush()
+                if not process.returncode:
+                    process.returncode = -69
             ret_dict['status'] = process.returncode
             ret_dict['elapsed'] = elapsed
 
     process = None
     if code is not None and ret_dict['status'] != code:
-        error = CalledProcessCodeError(ret_dict['status'], cmd, expected_code=code)
+        error = ProcessCodeError(ret_dict['status'], cmd, expected_code=code)
         if ret_dict['stderr']:
             error.output = ret_dict['stderr']
         raise error
@@ -137,7 +147,8 @@ def monitor_subprocess_io(process,
     ret_dict = {'stdout': "",
                 'stderr': "",
                 'io_bytes': 0,
-                'cb_result': None}
+                'cb_result': None,
+                'timeout_error': None}
     if logger:
         log_level = format_log_level(log_level)
         log_method = get_logger_method_for_level(level=log_level, logger=logger)
@@ -212,19 +223,26 @@ def monitor_subprocess_io(process,
                                                                             inactivity_timeout))
                         read_elapsed = int(time.time() - last_read)
                         if inactivity_timeout and read_elapsed > inactivity_timeout:
-                            raise RuntimeError('({0})io monitor: {1} seconds elapsed since '
-                                               'last read.'.format(process.pid, read_elapsed))
+                            raise ProcessTimeoutError(pid=process.pid, elapsed=read_elapsed,
+                                                      cmd=cmdstring, timeout=timeout,
+                                                      inactivity_timeout=_orig_inactivity_timeout)
                         done = True
             else:
-                error = ('({0}) Monitor process activity timeout fired after {1:.2} seconds. '
-                         'Inactivity_timeout:{2}, General Timeout:{3}'
-                         .format(process.pid, float(inactivity_timeout),
+
+                error = ('({0}) Cmd:"{1}", Monitor process activity timeout fired after {2} seconds. '
+                         'Inactivity_timeout:{3}, General Timeout:{4}'
+                         .format(process.pid, cmdstring or "unknown",
+                                 "{0:.2}".format(float(inactivity_timeout)),
                                  _orig_inactivity_timeout, timeout))
                 log_method(error)
                 if not inactivity_timeout:
                     error += "({0}) Check process monitor code. Inactivity timeout was not " \
                              "set and should not get here?".format(process.pid)
-                raise RuntimeError(error)
+                raise ProcessTimeoutError(pid=process.pid, cmd=cmdstring, timeout=timeout,
+                                          elapsed=inactivity_timeout,
+                                          inactivity_timeout=_orig_inactivity_timeout)
+    except ProcessTimeoutError as PE:
+        ret_dict['timeout_error'] = PE
     finally:
         try:
             for fd in fd_mon.iterkeys():
@@ -334,22 +352,41 @@ def wait_process_in_thread(pid):
 
 
 # Exception classes used by this module.
-class CalledProcessCodeError(subprocess.CalledProcessError):
-    """This exception is raised when a process run by check_call() or
-    check_output() returns a non-zero exit status.
-    The exit status will be stored in the returncode attribute;
-    check_output() will also store the output in the output attribute.
-    """
+class ProcessCodeError(subprocess.CalledProcessError):
+
     def __init__(self, returncode, cmd, output=None, expected_code=None):
         self.expected_code = expected_code
-        super(CalledProcessCodeError, self).__init__(returncode=returncode, cmd=cmd, output=output
-                                                 )
+        super(ProcessCodeError, self).__init__(returncode=returncode, cmd=cmd, output=output
+                                               )
     def __str__(self):
         msg = ('Cmd: "{0}" exit code:"{1}" != expected status:"{2}". '
                .format(self.cmd, self.returncode, self.expected_code))
         if self.output:
             msg += 'Output:"{0}"'.format(self.output)
         return msg
+
+# Exception classes used by this module.
+class ProcessTimeoutError(Exception):
+
+    def __init__(self, pid, elapsed, timeout, cmd=None, inactivity_timeout=None):
+        self.pid = pid
+        self.elapsed = "{0:.2}".format(float(elapsed))
+        self.cmd = cmd
+        self.timeout = "{0:.2}".format(float(timeout))
+
+        if inactivity_timeout is not None:
+            inactivity_timeout = "{0:.2}".format(float(inactivity_timeout))
+        self.inactivity_timeout = inactivity_timeout
+
+    def __str__(self):
+        msg = "({0})".format(self.pid)
+        if self.cmd:
+            msg = '{0}: Command:"{1}", '.format(msg, self.cmd)
+        msg += 'excution timeout. Elapsed:{0}, general timeout:{1}, inactivity_timeout:{2}'\
+            .format(self.cmd, self. timeout, self.inactivity_timeout)
+        return msg
+
+
 
 
 class ProcessCallBack(object):
