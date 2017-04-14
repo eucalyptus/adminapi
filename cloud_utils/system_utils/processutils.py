@@ -45,7 +45,7 @@ def local_cmd(cmd, verbose=True, timeout=120, inactivity_timeout=None,
         process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                    bufsize=4096, shell=shell)
         ret_dict['process'] = process
-
+        process.cmd = cmd
         ret_dict.update(monitor_subprocess_io(process, listformat=listformat, verbose=verbose,
                                               chunk_size=chunk_size, logger=logger,
                                               log_level=log_level, timeout=timeout,
@@ -90,6 +90,7 @@ def local_cmd(cmd, verbose=True, timeout=120, inactivity_timeout=None,
     return ret_dict
 
 def monitor_subprocess_io(process,
+                          cmdstring=None,
                           chunk_size=4096,
                           logger=None,
                           log_level='DEBUG',
@@ -113,6 +114,7 @@ def monitor_subprocess_io(process,
                                activity before raising error. Use 0 for no timeout. 
     returns bytes written
     '''
+    cmdstring = cmdstring or getattr(process, 'cmd', None)
     assert isinstance(process, subprocess.Popen), "Process must be of type:{0}, got:{1}/{2}"\
         .format(subprocess.Popen, process, type(process))
     inactivity_timeout = inactivity_timeout or timeout
@@ -139,6 +141,8 @@ def monitor_subprocess_io(process,
     else:
         def log_method(msg):
             print msg
+    if cmdstring:
+        log_method("({0}) local# {1}".format(process.pid, cmdstring.strip('\n')))
 
     last_read = time.time()
 
@@ -154,8 +158,11 @@ def monitor_subprocess_io(process,
         if fd_mon[fd]['last_read'] is None:
             fd_mon[fd]['last_read'] = last_read
         if show_n_flush_buf:
-            prefix = "({0}): ".format(fd_mon[fd]['name'])
-            log_method("{0}{1}".format(prefix, fd_mon[fd]['buf'].strip('\n')))
+            prefix = "({0}): ".format(process.pid)
+            if  fd_mon[fd]['name'] == 'stderr':
+                log_method(red("{0}{1}".format(prefix, fd_mon[fd]['buf'].strip('\n'))))
+            else:
+                log_method("{0}{1}".format(prefix, fd_mon[fd]['buf'].strip('\n')))
             fd_mon[fd]['buf'] = ""
             fd_mon[fd]['last_read'] = last_read
 
@@ -168,8 +175,8 @@ def monitor_subprocess_io(process,
         while not done and read_fds:
             elapsed = time.time() - start
             if elapsed > timeout:
-                raise RuntimeError('Timed Out after:{0} seconds monitoring process'
-                                   .format(timeout))
+                raise RuntimeError('({0}) Timed Out after:{1} seconds monitoring process'
+                                   .format(process.pid, timeout))
             if inactivity_timeout > (timeout - elapsed):
                 inactivity_timeout = (timeout - elapsed)
             # Make sure inactivity timeout is > 0, or None here.
@@ -197,22 +204,23 @@ def monitor_subprocess_io(process,
                             if fd_mon[fd]['cb']:
                                 ret_dict['cb_result'] = fd_mon[fd]['cb'].flush()
                     else:
-                        log_method('None of the readfds have appeared in the read ready list '
-                                   'for the inactivity period:"{0}"'.format(inactivity_timeout))
+                        log_method('({0}) None of the readfds have appeared in the read ready list '
+                                   'for the inactivity period:"{1}"'.format(process.pid,
+                                                                            inactivity_timeout))
                         read_elapsed = int(time.time() - last_read)
                         if inactivity_timeout and read_elapsed > inactivity_timeout:
-                            raise RuntimeError(
-                                'io monitor: {0} seconds elapsed since'
-                                ' last read.'.format(read_elapsed))
+                            raise RuntimeError('({0})io monitor: {1} seconds elapsed since '
+                                               'last read.'.format(process.pid, read_elapsed))
                         done = True
             else:
-                error = ('Monitor process activity timeout fired after {0:.2} seconds. '
-                         'Inactivity_timeout:{1}, General Timeout:{2}'
-                         .format(float(inactivity_timeout), _orig_inactivity_timeout, timeout))
+                error = ('({0}) Monitor process activity timeout fired after {1:.2} seconds. '
+                         'Inactivity_timeout:{2}, General Timeout:{3}'
+                         .format(process.pid, float(inactivity_timeout),
+                                 _orig_inactivity_timeout, timeout))
                 log_method(error)
                 if not inactivity_timeout:
-                    error += "Check process monitor code. Inactivity timeout was not set and " \
-                             "should not get here?"
+                    error += "({0}) Check process monitor code. Inactivity timeout was not " \
+                             "set and should not get here?".format(process.pid)
                 raise RuntimeError(error)
     finally:
         try:
@@ -220,7 +228,7 @@ def monitor_subprocess_io(process,
                 if fd_mon[fd]['buf']:
                     show_output(fd, force_flush=True)
         finally:
-            log_method('Monitor subprocess io finished')
+            log_method('\n({0}) Monitor subprocess io finished\n'.format(process.pid))
         if listformat:
             for fd in fd_mon.iterkeys():
                 ret_dict[fd_mon[fd]['name']] = ret_dict[fd_mon[fd]['name']].splitlines()
