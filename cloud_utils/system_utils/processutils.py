@@ -67,8 +67,8 @@ def local_cmd(cmd, verbose=True, timeout=120, inactivity_timeout=None,
             wait_timeout = timeout - elapsed
             if wait_timeout <= 0:
                 wait_timeout = 1
-        if process.poll() is not None:
-            output, unused_err = process.communicate(timeout=wait_timeout)
+            if process.poll() is not None:
+                output, unused_err = process.communicate(timeout=wait_timeout)
     finally:
         elapsed = time.time() - start
         if process:
@@ -232,7 +232,7 @@ def monitor_subprocess_io(process,
                 error = ('({0}) Cmd:"{1}", Monitor process activity timeout fired after {2} seconds. '
                          'Inactivity_timeout:{3}, General Timeout:{4}'
                          .format(process.pid, cmdstring or "unknown",
-                                 "{0:.2}".format(float(inactivity_timeout)),
+                                 "{0:.2f}".format(float(inactivity_timeout)),
                                  _orig_inactivity_timeout, timeout))
                 log_method(error)
                 if not inactivity_timeout:
@@ -370,12 +370,12 @@ class ProcessTimeoutError(Exception):
 
     def __init__(self, pid, elapsed, timeout, cmd=None, inactivity_timeout=None):
         self.pid = pid
-        self.elapsed = "{0:.2}".format(float(elapsed))
+        self.elapsed = "{0:.2f}".format(float(elapsed))
         self.cmd = cmd
-        self.timeout = "{0:.2}".format(float(timeout))
+        self.timeout = "{0:.2f}".format(float(timeout))
 
         if inactivity_timeout is not None:
-            inactivity_timeout = "{0:.2}".format(float(inactivity_timeout))
+            inactivity_timeout = "{0:.2f}".format(float(inactivity_timeout))
         self.inactivity_timeout = inactivity_timeout
 
     def __str__(self):
@@ -383,7 +383,7 @@ class ProcessTimeoutError(Exception):
         if self.cmd:
             msg = '{0}: Command:"{1}", '.format(msg, self.cmd)
         msg += 'excution timeout. Elapsed:{0}, general timeout:{1}, inactivity_timeout:{2}'\
-            .format(self.cmd, self. timeout, self.inactivity_timeout)
+            .format(self.elapsed, self. timeout, self.inactivity_timeout)
         return msg
 
 

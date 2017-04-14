@@ -122,6 +122,7 @@ class BaseManager(object):
             timeout = j.get('timeout', None)
             if timeout is not None:
                 kwargs['timeout'] = timeout
+            kwargs['inactivity_timeout'] = j.get('inactivity_timeout', None)
             kwargs['shell'] = self.format_bool(j.get('shell', False))
             kwargs['verbose'] = self.format_bool(j.get('verbose', True))
             res = local_cmd(**kwargs) or {}
