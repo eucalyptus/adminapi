@@ -6,6 +6,7 @@ from cloud_utils.log_utils import format_log_level
 from cloud_utils.system_utils.processutils import local_cmd
 import json
 
+
 def json_serial(obj):
     if isinstance(obj, datetime):
         serial = obj.isoformat()

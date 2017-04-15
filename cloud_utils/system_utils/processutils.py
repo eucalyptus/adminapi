@@ -5,7 +5,7 @@ from cloud_utils.log_utils import red, get_traceback
 import os
 import re
 import signal
-import sys
+import platform
 from select import select
 import traceback
 import threading
@@ -38,7 +38,7 @@ def local_cmd(cmd, verbose=True, timeout=120, inactivity_timeout=None,
     ret_dict = {'cmd': cmd,
                 'stdout': None,
                 'stderr': None,
-                'io_bytes': 0,
+                'rx_bytes': 0,
                 'timeout': timeout,
                 'inactivity_timeout': inactivity_timeout,
                 'process': None,
@@ -62,7 +62,7 @@ def local_cmd(cmd, verbose=True, timeout=120, inactivity_timeout=None,
             os.kill(process.pid, signal.SIGINT)
             timeout = 0
         elapsed = time.time() - start
-        while elapsed <= timeout and process.poll() is None:
+        while (not timeout or elapsed <= timeout) and process.poll() is None:
             elapsed = time.time() - start
             wait_timeout = timeout - elapsed
             if wait_timeout <= 0:
@@ -136,6 +136,7 @@ def monitor_subprocess_io(process,
     sub_stdout_fd = sub_stdout.fileno()
     sub_stderr = process.stderr
     sub_stderr_fd = sub_stderr.fileno()
+    timeout = timeout or None
     inactivity_timeout = inactivity_timeout or timeout
     _orig_inactivity_timeout = inactivity_timeout
     fd_mon = {}
@@ -156,7 +157,11 @@ def monitor_subprocess_io(process,
         def log_method(msg):
             print msg
     if cmdstring:
-        log_method("({0}) local# {1}".format(process.pid, cmdstring.strip('\n')))
+        try:
+            hostname = platform.uname()[1]
+        except:
+            hostname = "LOCAL"
+        log_method("({0}):{1}#: {2}".format(process.pid, hostname, cmdstring.strip('\n')))
 
     last_read = time.time()
 
@@ -188,10 +193,10 @@ def monitor_subprocess_io(process,
         read_fds = fd_mon.keys()
         while not done and read_fds:
             elapsed = time.time() - start
-            if elapsed > timeout:
+            if timeout is not None and (elapsed > timeout):
                 raise RuntimeError('({0}) Timed Out after:{1} seconds monitoring process'
                                    .format(process.pid, timeout))
-            if inactivity_timeout > (timeout - elapsed):
+            if timeout is not None and (inactivity_timeout > (timeout - elapsed)):
                 inactivity_timeout = (timeout - elapsed)
             # Make sure inactivity timeout is > 0, or None here.
             reads, writes, errors = select(read_fds, [], [],
