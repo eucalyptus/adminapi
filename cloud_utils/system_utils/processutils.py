@@ -1,16 +1,17 @@
 import subprocess
 from multiprocessing import Process
 from sys import stderr
-from cloud_utils.log_utils import red, get_traceback
+from cloud_utils.log_utils import red, get_traceback, format_log_level, \
+    get_logger_method_for_level, markup, TextStyle
 import os
 import re
 import signal
+from types import BuiltinFunctionType
 import platform
 from select import select
 import traceback
 import threading
 import time
-from cloud_utils.log_utils import format_log_level, get_logger_method_for_level
 
 
 
@@ -68,7 +69,7 @@ def local_cmd(cmd, verbose=True, timeout=120, inactivity_timeout=None,
             if wait_timeout <= 0:
                 wait_timeout = 1
             if process.poll() is not None:
-                output, unused_err = process.communicate(timeout=wait_timeout)
+                output, unused_err = process.communicate()
     finally:
         elapsed = time.time() - start
         if process:
@@ -104,12 +105,14 @@ def local_cmd(cmd, verbose=True, timeout=120, inactivity_timeout=None,
 
 def monitor_subprocess_io(process,
                           cmdstring=None,
-                          chunk_size=4096,
                           logger=None,
                           log_level='DEBUG',
                           verbose=True,
+                          chunk_size=4096,
                           stdout_callback=None,
                           stderr_callback=None,
+                          status_queue=None,
+                          status_interval=10,
                           listformat=False,
                           inactivity_timeout=None,
                           timeout=120):
@@ -121,17 +124,35 @@ def monitor_subprocess_io(process,
     If there is no activity on stdout and stderr for a period of
     'inactivity_timeout' seconds than an error is raised. 
     If a logger is provided, stdout and stderr will be logged at the log level provided. 
+    Upon completion a dict with information about the monitoring operation is returned:
+        {'cb_result': int (if a provided call back returns a result per flush() otherwise None),
+         'io_bytes': int (number of bytes read in),
+         'stderr': str or list of strings depending on listformat flag,
+         'stdout': str or list of strings depending on listformat flag,
+         'timeout_error': Exception obj if either of the provided timeouts is exceeded, else None}
     :param process: subprocess obj
-    :param chunk_size: size to read/write per iteration
+    :param cmdstring: optional str representing the command used for the process being monitored. 
+    :param logger: optional logger obj used for logging debugging type messages at the log_level
+                   provided. 
+    :param log_level: log level used to select which method from the provided logger obj to use 
+                      when writing debugging type messages from this monitor operation
+    :param verbose: bool. If set will log the debugging output for this process. 
+    :param chunk_size: if using verbose, this is the max size to be read-in (w/o a newline char) 
+                       before writing debug output. 
+    :param stdout_callback: A call back or file like obj to be used to handle stdout data as it 
+                           is read in. See "ProcessOutputCallBack" for more info. 
+    :param stderr_callback: A call back or file like obj to be used to handle stderr data as it 
+                           is read in. See "ProcessOutputCallBack" for more info.
+    :param listformat: bool. If set will return stdout/stderr as a lists instead of single buffers
     :param inactivity_timeout: int seconds to allow for no infile
                                activity before raising error. Use 0 for no timeout. 
-    returns bytes written
+    :param timeout: General overall timeout for this operation. Use 0 for no timeout. 
+    returns dict (see above)
     '''
     cmdstring = cmdstring or getattr(process, 'cmd', None)
     assert isinstance(process, subprocess.Popen), "Process must be of type:{0}, got:{1}/{2}"\
         .format(subprocess.Popen, process, type(process))
     inactivity_timeout = inactivity_timeout or timeout
-    chunk_size = chunk_size or 1
     sub_stdout = process.stdout
     sub_stdout_fd = sub_stdout.fileno()
     sub_stderr = process.stderr
@@ -141,9 +162,11 @@ def monitor_subprocess_io(process,
     _orig_inactivity_timeout = inactivity_timeout
     fd_mon = {}
     fd_mon[sub_stdout_fd] = {'buf': "", 'last_read': None, 'cb': stdout_callback,
-                             'name': 'stdout', 'fileobj': sub_stdout}
+                             'name': 'stdout', 'fileobj': sub_stdout,
+                             'cb_data': {'process': process}}
     fd_mon[sub_stderr_fd] = {'buf': "", 'last_read': None, 'cb': stderr_callback,
-                             'name': 'stderr', 'fileobj': sub_stderr}
+                             'name': 'stderr', 'fileobj': sub_stderr,
+                             'cb_data': {'process': process}}
 
     ret_dict = {'stdout': "",
                 'stderr': "",
@@ -215,13 +238,43 @@ def monitor_subprocess_io(process,
                             fd_mon[fd]['buf'] += chunk
                             show_output(fd)
                             if fd_mon[fd]['cb']:
-                                chunk = fd_mon[fd]['cb'].write(chunk)
+                                # Feed provided callback data read from FD along with the
+                                # CB data dict...
+                                cb_data = fd_mon[fd]['cb_data']
+                                cb_data['timeout'] = timeout
+                                cb_data['inactivity_timeout'] = inactivity_timeout
+                                cb_data['fd'] = fd
+                                cb_data['elapsed'] = elapsed
+                                cb_data['last_read'] = fd_mon[fd]['last_read']
+                                # Allow for CB or file like obj...
+                                if isinstance(fd_mon[fd]['cb'].write, BuiltinFunctionType):
+                                    cb_data = fd_mon[fd]['cb'].write(chunk)
+                                else:
+                                    cb_data = fd_mon[fd]['cb'].write(chunk, data=cb_data)
+                                # cb can change the read in data as well as timeout values.
+                                # remove values from cb_data after reading to return to cb on
+                                # next fd read iteration...
+                                if cb_data is not None:
+                                    if 'buf' in cb_data:
+                                        chunk = cb_data.pop('buf')
+                                    if 'timeout' in cb_data:
+                                        timeout = cb_data.pop('timeout')
+                                    if 'inactivity_timeout' in cb_data:
+                                        inactivity_timeout = cb_data.pop('inactivity_timeout')
+                                # Allow the CB to provide itself with data on the next
+                                # iteration in the cb_data...
+                                fd_mon[fd]['cb_data'] = cb_data
                             ret_dict[fd_mon[fd]['name']] += chunk
                             ret_dict['io_bytes'] += len(chunk)
                         else:
                             read_fds.remove(fd)
                             if fd_mon[fd]['cb']:
-                                ret_dict['cb_result'] = fd_mon[fd]['cb'].flush()
+                                # Allow for CB or file like obj...
+                                if isinstance(fd_mon[fd]['cb'].flush, BuiltinFunctionType):
+                                    ret_dict['cb_result'] = fd_mon[fd]['cb'].flush()
+                                else:
+                                    ret_dict['cb_result'] = \
+                                        fd_mon[fd]['cb'].flush(data=fd_mon[fd]['cb_data'])
                     else:
                         log_method('({0}) None of the readfds have appeared in the read ready list '
                                    'for the inactivity period:"{1}"'.format(process.pid,
@@ -253,6 +306,13 @@ def monitor_subprocess_io(process,
             for fd in fd_mon.iterkeys():
                 if fd_mon[fd]['buf']:
                     show_output(fd, force_flush=True)
+                    if fd_mon[fd]['cb']:
+                        # Allow for CB or file like obj...
+                        if isinstance(fd_mon[fd]['cb'].flush, BuiltinFunctionType):
+                            ret_dict['cb_result'] = fd_mon[fd]['cb'].flush()
+                        else:
+                            ret_dict['cb_result'] = \
+                                fd_mon[fd]['cb'].flush(data=fd_mon[fd]['cb_data'])
         finally:
             log_method('\n({0}) Monitor subprocess io finished\n'.format(process.pid))
         if listformat:
@@ -394,15 +454,93 @@ class ProcessTimeoutError(Exception):
 
 
 
-class ProcessCallBack(object):
+class ProcessOutputCallBack(object):
+    """
+    Base Call back for use when monitoring process stdout/stderr FDs. 
+    """
 
     def __init__(self):
+        self.cb_data = {}
+        self.return_code = None
         pass
 
-    def write(self, buf):
-        return buf
+    def write(self, buf, data=None):
+        """
+        This method is intended to handle the latest buffer read from process being monitored. 
+        Actions can be taking on the provided buffer and manipulated when returned to the 
+        monitor function by storing in the 'buf' attribute of the cb_data dict to be returned. 
+        Data in the cb_data dict can be used to manipulate the timeouts of the 
+        process monitor, and/or be used to persist data across multiple write()s. 
+        :param buf: buffer read from process
+        :param data: data dict with information about process, fd, timeouts, etc.. 
+        :return: data_dict
+        """
+        return self.cb_data
 
-    def flush(self):
-        pass
+    def flush(self, data=None):
+        """
+        Indicates the monitoring process is done reading from the process and flushing. 
+        :param data: cb_data dict used to store information about this specific process fd's 
+        monitoring. A return code can be provided here to indicate the desired return code
+        for the call back. If not 'None' this will be used to override the underlying process's 
+        return code 
+        :return:  int 
+        """
+        return self.return_code
+
+
+class TestOutputCallback(ProcessOutputCallBack):
+    """
+    Sample process output callback. 
+    """
+
+    def __init__(self):
+        self.local_buf = ""
+        self.line_cnt = 0
+
+    def print_debug(self, msg):
+        print markup(msg, markups=[TextStyle.INVERSE, TextStyle.BOLD])
+
+    def store_until_newline(self, buf):
+        lines = []
+        for c in buf or "":
+            if c == "\n":
+                lines.append(self.local_buf)
+                self.local_buf = ""
+            else:
+                self.local_buf += c
+        return lines
+
+    def write(self, buf, data=None):
+        elapsed = None
+        if not data.get('cb_bytes_read', None):
+            self.print_debug('CallBack Dict:"{0}"'.format(data))
+            data['cb_bytes_read'] = len(buf)
+        else:
+            data['cb_bytes_read'] += len(buf)
+        data['buf'] = ""
+        for line in self.store_until_newline(buf):
+            data['buf'] += 'Got a line:{0}\n'.format(line)
+            self.line_cnt += 1
+        if data['buf']:
+            now = round(time.time(), 3)
+            last_line_read = data.get('cb_last_read', None)
+            if last_line_read is None:
+                if data.get('elapsed', None) is not None:
+                    elapsed = data['elapsed']
+            if elapsed is None:
+                elapsed = now - last_line_read
+            elapsed ="{0:.3f}".format(elapsed)
+            data['cb_last_read'] = now
+            self.print_debug('Callback read line#"{0}", elapsed since last line:"{1}"'
+                             .format(self.line_cnt, elapsed))
+        return data
+
+    def flush(self, data=None):
+        return_code = -999
+        self.print_debug('Flushing test callback, returning code: {0}'.format(return_code))
+        return return_code
+
+
 
 

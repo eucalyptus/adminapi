@@ -263,6 +263,8 @@ class AutoCreds(Eucarc):
                 self.auto_find_credentials()
         else:
             self.update_attrs_from_cloud_services()
+        if not self._domain:
+            self.log.warning('Cloud domain is not set, this may cause connection problems')
 
     @property
     def is_https(self):
@@ -287,7 +289,7 @@ class AutoCreds(Eucarc):
         :param update: update the service endpoints upon changes detected to the region or domain
         :return: None
         """
-        self.log.info('Updating with region:{0} and domain{1}'.format(region, domain))
+        self.log.debug('Updating with region:{0} and domain{1}'.format(region, domain))
         region = region or self.region or ""
         domain = domain or self.domain or ""
         region = region.strip()
@@ -304,16 +306,14 @@ class AutoCreds(Eucarc):
             domain = domain.lstrip(region).strip('.')
         self._region = region
         self._domain = domain
-        if not domain:
-            self.log.warning('Cloud domain is not set, this may cause connection problems')
-
         region_domain = region.split('.') + domain.split('.')
         region_domain = ".".join(region_domain).strip('.')
         changed = not(region_domain == self._region_domain)
         self._region_domain = region_domain
         if update and changed:
             self.update_attrs_from_cloud_services()
-        self.log.info('Done. Updated region to:{0}/{1} domain to:{2}/{3}'.format(self._region, self.region,  self._domain, self.domain))
+        self.log.debug('Done. Updated region to:{0}/{1} domain to:{2}/{3}'
+                      .format(self._region, self.region,  self._domain, self.domain))
 
     @property
     def region(self):
