@@ -111,10 +111,8 @@ from cloud_admin.services.storage_controller_service import EucaStorageControlle
 from cloud_admin.services.osg_service import EucaObjectStorageGatewayService
 from cloud_admin.services.node_service import EucaNodeService, SHOW_NODES
 from cloud_admin.services.walrus_service import EucaWalrusBackendService
-from cloud_admin.services.arbitrator_service import EucaArbitratorService
 from cloud_admin.services.ufs import Ufs
 from cloud_admin.services.service_certificate import ServiceCertificate
-from cloud_admin.services.vmware_broker_service import EucaVMwareBrokerService
 from cloud_admin.services.services import (
     EucaService,
     EucaServiceList,
@@ -774,52 +772,6 @@ class ServiceConnection(AWSQueryConnection):
         raise EucaNotFoundException('get_walrus_backend_service. WS not found for args:',
                                     notfounddict={'name': name})
 
-    def get_all_vmware_broker_services(self):
-        """
-        Fetch all vmware broker service components
-
-        :return: list of EucaVmwareBrokerService objs
-        """
-        return self._get_list_request('DescribeVMwareBrokers', EucaVMwareBrokerService)
-
-    def get_vmware_broker_service(self, name):
-        """
-        Fetch specific vmware broker service from the cloud by it's unique name
-
-        :param name: unique name of service to fetch
-        :return: EucaVmwareBrokerService
-        :raise EucaNotFoundException:
-        """
-        vmbs = self.get_all_vmware_broker_services()
-        for vmb in vmbs:
-            if name and str(vmb.name) == str(name):
-                return vmb
-        raise EucaNotFoundException('get_vmware_broker_service. VMB not found for args:',
-                                    notfounddict={'name': name})
-
-    def get_all_arbitrator_services(self):
-        """
-        Fetch all arbitrator service components
-
-        :return: list of EucaArbitratorService objs
-        """
-        return self._get_list_request('DescribeArbitrators', EucaArbitratorService)
-
-    def get_arbitrator_service(self, name):
-        """
-        Fetch specific arbitrator service from the cloud by it's unique name
-
-        :param name: unique name of service to fetch
-        :return: EucaArbitratorService
-        :raise EucaNotFoundException:
-        """
-        arbs = self.get_all_arbitrator_services()
-        for arb in arbs:
-            if name and str(arb.name) == str(name):
-                return arb
-        raise EucaNotFoundException('get_arbitrator_service. ARB not found for args:',
-                                    notfounddict={'name': name})
-
     def get_all_unified_frontend_services(self, names=None):
         """
         Fetch specific unified front end User-API service (UFS)
@@ -1048,13 +1000,6 @@ class ServiceConnection(AWSQueryConnection):
             components['node'] = self.get_all_node_controller_services()
         if service_type in [None, 'user-api']:
             components['user-api'] = self.get_all_unified_frontend_services()
-        components['vmwarebroker'] = []
-        if service_type in [None, 'vmwarebroker']:
-            try:
-                components['vmwarebroker'] = self.get_all_vmware_broker_services()
-            except BotoServerError, VMWE:
-                self.log.warn('Failed to fetch vmware brokers, vmware may not be supported on '
-                              'this cloud. Err:{0}'.format(VMWE.message))
         if not partition:
             return components
         else:
