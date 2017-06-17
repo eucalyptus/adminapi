@@ -300,7 +300,7 @@ class ServiceConnection(AWSQueryConnection):
             raise e
         return connection
 
-    def _get_list_request(self, action='DescribeEucalyptus', service=EucaService, params={},
+    def _get_list_request(self, action, service=EucaService, params={},
                           markers=['item', 'euca:item'], verb='GET'):
         """
         Make list request and parse objects into provided 'service' class using provided 'markers'
@@ -636,13 +636,21 @@ class ServiceConnection(AWSQueryConnection):
     #                Eucalyptus 'Component-Service' Type Methods                                  #
     ###############################################################################################
 
+    def get_services_as_components(self, service_type, service_class, partition=None):
+        ret_list = []
+        services = self.get_services(service_type=service_type)
+        for service in services:
+            if not partition or service.partition == partition:
+                ret_list.append(service_class(serviceobj=service))
+        return ret_list
+
     def get_all_cloud_controller_services(self):
         """
         Fetch all cloud controller service components
 
         :return: list of EucaCloudControllerService objs
         """
-        return self._get_list_request('DescribeEucalyptus', EucaCloudControllerService)
+        return self.get_services_as_components('eucalyptus', EucaCloudControllerService)
 
     def get_cloud_controller_service(self, name):
         """
@@ -665,15 +673,7 @@ class ServiceConnection(AWSQueryConnection):
 
         :return: list of EucaClusterControllerService objs
         """
-        retlist = []
-        ccs = self._get_list_request('DescribeClusters', EucaClusterControllerService)
-        if not partition:
-            return ccs
-        else:
-            for cc in ccs:
-                if cc.partition == partition:
-                    retlist.append(cc)
-            return retlist
+        return self.get_services_as_components('cluster', EucaClusterControllerService, partition)
 
     def get_cluster_controller_service(self, name):
         """
@@ -708,8 +708,7 @@ class ServiceConnection(AWSQueryConnection):
 
         :return: list of EucaObjectStorageGatewayService objs
         """
-        return self._get_list_request('DescribeObjectStorageGateways',
-                                      EucaObjectStorageGatewayService)
+        return self.get_services_as_components('objectstorage', EucaObjectStorageGatewayService)
 
     def get_object_storage_gateway_service(self, name):
         """
@@ -732,7 +731,7 @@ class ServiceConnection(AWSQueryConnection):
 
         :return: list of EucaStorageControllerService objs
         """
-        return self._get_list_request('DescribeStorageControllers', EucaStorageControllerService)
+        return self.get_services_as_components('storage', EucaStorageControllerService)
 
     def get_storage_controller_service(self, name):
         """
@@ -755,7 +754,7 @@ class ServiceConnection(AWSQueryConnection):
 
         :return: list of EucaWalrusBackendService objs
         """
-        return self._get_list_request('DescribeWalrusBackends', EucaWalrusBackendService)
+        return self.get_services_as_components('walrusbackend', EucaWalrusBackendService)
 
     def get_walrus_backend_service(self, name):
         """
@@ -834,7 +833,7 @@ class ServiceConnection(AWSQueryConnection):
                 continue
             if filter_fullname and str(filter_fullname) != str(getattr(service, 'fullname', None)):
                 continue
-            nodes.append(EucaNodeService._from_service(service))
+            nodes.append(EucaNodeService(serviceobj=service))
         if get_instances:
             try:
                 reservations = self.ec2_connection.get_all_instances(
