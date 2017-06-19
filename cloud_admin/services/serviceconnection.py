@@ -83,7 +83,6 @@ cad.show_storage_controllers()
 
 import copy
 import errno
-import json
 import os
 import re
 import socket
@@ -97,7 +96,6 @@ from boto.vpc import VPCConnection
 from boto.resultset import ResultSet
 from boto.connection import AWSQueryConnection
 from boto.ec2.regioninfo import RegionInfo
-from boto.exception import BotoServerError
 
 from cloud_admin.services import EucaResponseException, EucaNotFoundException
 from cloud_admin.services.cluster_controller_service import (
@@ -105,7 +103,7 @@ from cloud_admin.services.cluster_controller_service import (
     SHOW_CLUSTER_CONTROLLER_SERVICES
 )
 from cloud_admin.services.cloud_controller_service import EucaCloudControllerService
-from cloud_admin.services.cluster import Cluster, show_cluster
+from cloud_admin.services.cluster import Cluster
 from cloud_admin.services.dns_service import EucaDnsService
 from cloud_admin.services.storage_controller_service import EucaStorageControllerService
 from cloud_admin.services.osg_service import EucaObjectStorageGatewayService
@@ -122,11 +120,6 @@ from cloud_admin.services.services import (
     SHOW_SERVICES,
     SHOW_SERVICE_TYPES,
     SHOW_SERVICE_TYPES_VERBOSE
-)
-from cloud_admin.services.eucaproperty import (
-    EucaProperty,
-    SHOW_PROPERTIES,
-    SHOW_PROPERTIES_NARROW
 )
 from cloud_utils.log_utils import get_traceback, eulogger, markup
 
@@ -244,13 +237,7 @@ class ServiceConnection(AWSQueryConnection):
         access_key = access_key or self.aws_access_key_id
         secret_key = secret_key or self.aws_secret_access_key
         ec2_region = RegionInfo()
-        try:
-            region_prop = self.get_property('system.dns.dnsdomain')
-            ec2_region.name = region_prop.value
-        except Exception as RE:
-            self.log.warning('Failed to fetch dns domain to use as cloud region. Err:"{0}"'
-                             .format(RE))
-            ec2_region.name = 'eucalyptus'
+        ec2_region.name = 'eucalyptus'
         host = endpoint
         if not endpoint:
             try:
@@ -592,7 +579,7 @@ class ServiceConnection(AWSQueryConnection):
         deregistered_service = None
         messages = ""
         markers = ['DeregisterServiceResponseType', 'euca:DeregisterServiceResponseType']
-        params = {'Type': service_type, 'Name': unique_name, 'Type': service_type}
+        params = {'Type': service_type, 'Name': unique_name}
         cmd_string = str(
             'DeregisterService({0})'
             .format(", ".join('{0}="{1}"'.format(x, y) for x, y in params.iteritems())))
@@ -776,7 +763,7 @@ class ServiceConnection(AWSQueryConnection):
         Fetch specific unified front end User-API service (UFS)
         from the cloud by it's unique name
 
-        :param name: unique name of service to fetch
+        :param names: unique names of service to fetch
         :return: UfsService
         :raise EucaNotFoundException:
         """
@@ -1009,152 +996,6 @@ class ServiceConnection(AWSQueryConnection):
                     if service.partition == partition:
                         ret_dict[ctype].append(service)
             return ret_dict
-
-    ###############################################################################################
-    #                            Eucalyptus 'Property' Methods                                    #
-    ###############################################################################################
-
-    def get_property(self, property):
-        """
-        Gets a single eucalyptus property matching 'property'.
-        If the query returns anything other than a single property, a ValueError is thrown.
-
-        :params property: string representing the property name,
-                          or EucaProperty obj used to fetch the eucalyptus property
-        :returns : A single EucaProperty obj
-        """
-        property_name = None
-        if property:
-            if isinstance(property, EucaProperty):
-                property_name = property.name
-            if isinstance(property, basestring):
-                property_name = str(property)
-        if not property:
-            raise ValueError('Unknown type provided for property lookup: "{0}/{1}"'
-                             .format(property, type(property)))
-        props = self.get_properties(property_name)
-        keep = []
-        for prop in props:
-            if re.match('^{0}$'.format(property_name), prop.name):
-                keep.append(prop)
-        prop_count = len(keep)
-        if prop_count < 1:
-            raise EucaNotFoundException('get_property:Property not Found', {'property': property})
-        if prop_count > 1:
-            prop_string = ""
-            try:
-                prop_string = ",".join("\t{0}\n".format(x.name) for x in keep)
-            except:
-                pass
-            raise ValueError('get_property: Multiple matches for property name:{0}, found {1} '
-                             'matches:\n{2}'.format(property_name, prop_count, prop_string))
-        return keep[0]
-
-    def get_properties(self, search=None, *nameprefix):
-        '''
-        Gets eucalyptus cloud configuration properties
-        examples:
-            get_properties()
-            get_properties('www', 'objectstorage')
-            get_properties('cloud.euca_log_level')
-        :param nameprefix: list or property names or the prefix to match against properties.
-        :returns a list of EucaProperty objs
-        '''
-        ret_list = []
-        params = {}
-        x = 0
-        nameprefix = nameprefix or []
-        for prop in nameprefix:
-            if not prop:
-                continue
-            x += 1
-            params['Property.{0}'.format(x)] = prop
-        props = self._get_list_request('DescribeProperties', EucaProperty, params=params)
-        if not search:
-            return props
-        for prop in props:
-            if re.search(search, prop.name):
-                ret_list.append(prop)
-        return ret_list
-
-    def modify_property(self, prop, value, verbose=True):
-        """
-        Modify a Eucalyptus Property
-
-        :param prop: EucaProperty obj or string name of property
-        :param value: value to modify property value to
-        :param verbose: show debug information during modify attempt
-        :return: Modified EucaProperty object
-        :raise ValueError:
-        """
-        ret_prop = None
-        params = {}
-        action = 'ModifyPropertyValue'
-        value = value or ""
-        if not isinstance(prop, EucaProperty):
-            props = self.get_properties(prop) or []
-            if props:
-                prop = props[0]
-            else:
-                raise ValueError('modify_property err. Property: "{0}" was not found on system?'
-                                 .format(prop))
-        params['Name'] = prop.name
-        params['Value'] = str(value)
-        markers = ['euca:ModifyPropertyValueResponseType', 'ModifyPropertyValueResponseType']
-        ret_prop_list = self._get_list_request(action=action, service=EucaProperty,
-                                               verb='POST', params=params, markers=markers)
-        if ret_prop_list:
-            ret_prop = ret_prop_list[0]
-            if verbose:
-                self.show_properties(properties=[ret_prop], description=False)
-        else:
-            if verbose:
-                self.debug_method('Could not parse EucaProperty from ModifyPropertyValue '
-                                  'response:"{0}"'.format(prop))
-        return ret_prop
-
-    def show_properties(self, *args, **kwargs):
-        '''
-        Summarize Eucalyptus properties in table format
-
-        :param properties: list of property names, or Eucaproperties to summarize
-        :param description: bool, show property descriptions
-        :param grid: bool, show table in grid format
-        :param readonly: bool, show readonly flag
-        :param defaults: bool, show property defaults in table
-        :param print_table: bool, if True will print table using connection.debug_method()
-                            if False will return the table object
-        :param search: string, to use as filter for name of properties
-        :param nameprefix: property names used to filter query responsee
-        '''
-        return SHOW_PROPERTIES(self, *args, **kwargs)
-
-    def show_properties_narrow(self, *args, **kwargs):
-        """
-        Narrow formatted table used to summarize Eucalyptus properties
-
-        :param connection: cloud_admin connection
-        :param properties: list of EucaProperty objs or string names of properties
-        :param verbose: show debug information during table creation
-        :param print_table: bool, if True will print table using connection.debug_method()
-                            if False will return the table object
-        :param prop_names: property names used to filter query response
-        """
-        return SHOW_PROPERTIES_NARROW(self, *args, **kwargs)
-
-    def get_cloud_network_config_json(self, property_name='cloud.network.network_configuration'):
-        net_prop = self.get_property(property=property_name)
-        return json.loads(net_prop.value)
-
-    def modify_cloud_network_config_json(self, net_dict,
-                                         property_name='cloud.network.network_configuration'):
-        net_prop = self.get_property(property=property_name)
-        last_value = net_prop.value
-        if isinstance(net_dict, dict):
-            net_dict = json.dumps(net_dict, format=2)
-        if not isinstance(net_dict, basestring):
-            raise ValueError('modify_cloud_network_config_json: net_dict not string or json')
-        self.modify_property(net_prop, net_dict)
 
     ###############################################################################################
     #                           Instance Migration                                                #
