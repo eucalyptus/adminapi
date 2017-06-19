@@ -392,7 +392,7 @@ class ServiceConnection(AWSQueryConnection):
         if not isinstance(service_names, list):
             service_names = [service_names]
         if markers is None:
-            markers = [('euca:serviceStatuses', service_class)]
+            markers = [('euca:serviceStatuses', service_class),('serviceStatuses', service_class)]
         params = {}
         x = 0
         for name in service_names:
