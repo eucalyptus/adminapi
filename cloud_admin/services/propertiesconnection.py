@@ -128,7 +128,7 @@ class PropertiesConnection(AWSQueryConnection):
             if isinstance(property, EucaProperty):
                 property_name = property.name
             if isinstance(property, basestring):
-                property_name = str(property)
+                property_name = str(property).strip()
         if not property:
             raise ValueError('Unknown type provided for property lookup: "{0}/{1}"'
                              .format(property, type(property)))
@@ -169,7 +169,7 @@ class PropertiesConnection(AWSQueryConnection):
                 continue
             x += 1
             params['Property.{0}'.format(x)] = prop
-        props = self._get_list_request('DescribeProperties', params=params)
+        props = self._get_list_request('DescribeProperties', EucaProperty, params=params)
         if not search:
             return props
         for prop in props:
