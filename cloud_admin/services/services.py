@@ -824,51 +824,13 @@ class EucaUris(EucaBaseObj):
 
 
 class EucaComponentService(EucaService):
-    """
-    Used to parse Eucalyptus Components per service responses
-    (services vs components, confusing? ... yes)
-    """
 
-    def _update(self, get_method, get_method_kwargs=None, new_service=None, silent=True):
-        """
-        Base update method for updating component service objs
-        :param get_method_name: method name used to fetch the service for update. This method
-                                must be part of self.connection under the admin class
-        :param get_method_kwargs: dict of kwargs used when calling the 'get_method_name' to
-                                  fetch the updated service obj.
-        :params new_service: a service object to be used to update self from.
-        :params silent: bool, if True will not raise Exceptions found during lookup, will instead
-                        write errors to self.connection.err_method()
-        :returns : self upon successful update, otherwise returns None
-        """
-        errmsg = ""
-        if not new_service:
-            # If kwargs was left as None, update it with at least self.name...
-            if get_method_kwargs is None:
-                name = self.name
-                if not name:
-                    raise ValueError('Must set "name" before using update(). '
-                                     'Name:{0}, FullName:{1}'.format(name))
-            get_method_kwargs = {'name': self.name}
-            try:
-                new_service = get_method(**get_method_kwargs)
-            except Exception as LE:
-                if silent:
-                    errmsg = "{0}\n{1}\n".format(get_traceback(), str(LE))
-                    self.connection.err_method('{0}Update failed. {1} not found'
-                                               .format(errmsg, self.name))
-                    return None
-                else:
-                    raise
-        if not isinstance(new_service, self.__class__):
-            raise ValueError('"{0}" update error. Non {1} type for new_service. '
-                             'Found: "{2}/{3}"'.format(self.name,
-                                                       self.__class__.__name__,
-                                                       new_service,
-                                                       type(new_service)))
-        if new_service:
-            self.__dict__.update(new_service.__dict__)
-            return self
+    def __init__(self, connection=None, serviceobj=None):
+        if not connection:
+            connection = getattr(serviceobj, 'connection', None)
+        super(EucaComponentService, self).__init__(connection)
+        if serviceobj:
+            self.__dict__.update(serviceobj.__dict__)
 
     def show(self, print_table=True):
         """

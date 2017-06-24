@@ -9,6 +9,7 @@ import struct
 import fcntl
 import threading
 from cloud_admin.access.autocreds import AutoCreds
+from cloud_admin.services.propertiesconnection import PropertiesConnection
 from cloud_admin.services.serviceconnection import ServiceConnection
 from cloud_admin.hosts.eucahost import EucaHost
 from cloud_utils.system_utils.machine import Machine
@@ -69,6 +70,11 @@ class SystemConnection(ServiceConnection):
                                https=https,
                                logger=self.log,
                                **self.machine_connect_kwargs)
+        self.properties_connection = PropertiesConnection(hostname=hostname,
+                                                          aws_secret_key=self.creds.aws_secret_key,
+                                                          aws_access_key=self.creds.aws_access_key,
+                                                          logger=self.log,
+                                                          boto_debug_level=boto_debug_level)
         super(SystemConnection, self).__init__(hostname=hostname,
                                                aws_secret_key=self.creds.aws_secret_key,
                                                aws_access_key=self.creds.aws_access_key,
@@ -546,3 +552,71 @@ class SystemConnection(ServiceConnection):
 
     def build_machine_dict_from_cloud_services(self):
         raise NotImplementedError('not yet implemented')
+
+    ###############################################################################################
+    #                      Delegated Eucalyptus 'Property' Methods                                #
+    ###############################################################################################
+
+    def get_property(self, property):
+        return self.properties_connection.get_property( property )
+
+    def get_properties(self, search=None, *nameprefix):
+        '''
+        Gets eucalyptus cloud configuration properties
+        examples:
+            get_properties()
+            get_properties('www', 'objectstorage')
+            get_properties('cloud.euca_log_level')
+        :param nameprefix: list or property names or the prefix to match against properties.
+        :returns a list of EucaProperty objs
+        '''
+        return self.properties_connection.get_properties( search, nameprefix )
+
+    def modify_property(self, prop, value, verbose=True):
+        """
+        Modify a Eucalyptus Property
+
+        :param prop: EucaProperty obj or string name of property
+        :param value: value to modify property value to
+        :param verbose: show debug information during modify attempt
+        :return: Modified EucaProperty object
+        :raise ValueError:
+        """
+        return self.properties_connection.modify_property( prop, value, verbose )
+
+    def show_properties(self, *args, **kwargs):
+        '''
+        Summarize Eucalyptus properties in table format
+
+        :param properties: list of property names, or Eucaproperties to summarize
+        :param description: bool, show property descriptions
+        :param grid: bool, show table in grid format
+        :param readonly: bool, show readonly flag
+        :param defaults: bool, show property defaults in table
+        :param print_table: bool, if True will print table using connection.debug_method()
+                            if False will return the table object
+        :param search: string, to use as filter for name of properties
+        :param nameprefix: property names used to filter query responsee
+        '''
+        return self.properties_connection.show_properties( args, kwargs )
+
+    def show_properties_narrow(self, *args, **kwargs):
+        """
+        Narrow formatted table used to summarize Eucalyptus properties
+
+        :param connection: cloud_admin connection
+        :param properties: list of EucaProperty objs or string names of properties
+        :param verbose: show debug information during table creation
+        :param print_table: bool, if True will print table using connection.debug_method()
+                            if False will return the table object
+        :param prop_names: property names used to filter query response
+        """
+        return self.properties_connection.show_properties_narrow( args, kwargs )
+
+
+    def get_cloud_network_config_json(self, property_name='cloud.network.network_configuration'):
+        return self.properties_connection.get_cloud_network_config_json( property_name )
+
+    def modify_cloud_network_config_json(self, net_dict,
+                                         property_name='cloud.network.network_configuration'):
+        self.properties_connection.modify_cloud_network_config_json( net_dict, property_name )

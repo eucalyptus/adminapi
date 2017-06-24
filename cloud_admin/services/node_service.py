@@ -76,12 +76,9 @@ class EucaNodeService(EucaComponentService):
     Used to parse the node service type describe, and modify requests/responses.
     """
 
-    def __init__(self, connection=None):
-        super(EucaNodeService, self).__init__(connection)
+    def __init__(self, connection=None, serviceobj=None):
+        super(EucaNodeService, self).__init__(connection, serviceobj)
         self.instances = []
-        self.localstate = None
-        self.name = None
-        self.partition = None
         self.fullname = None
         self._hostname = None
 
@@ -104,33 +101,8 @@ class EucaNodeService(EucaComponentService):
     def hostname(self, value):
         self._hostname = value
 
-    @classmethod
-    def _from_service(cls, service):
-        new_node = cls()
-        new_node.__dict__.update(service.__dict__)
-        return new_node
-
-    def show(self):
-        return SHOW_NODES(self.connection, nodes=self)
-
-    def update(self, new_service=None, get_instances=True, silent=True):
-        """
-        Updates this service obj
-        :params silent: bool, if True will not raise Exceptions found during lookup, will instead
-                        write errors to self.connection.err_method()
-        :returns : self upon successful update, otherwise returns None
-        """
-        if not new_service:
-            if not self.name and not self.fullname:
-                raise ValueError('Must set "name" or "fullname" before using update(). Name:{0}'
-                                 .format(self.name))
-        return self._update(new_service=new_service,
-                            get_method=self.connection.get_node_controller_service,
-                            get_method_kwargs={'name': self.name,
-                                               'fullname': self.fullname,
-                                               'partition': self.partition,
-                                               'get_instances': get_instances},
-                            silent=silent)
+    def show(self, print_table=True):
+        return SHOW_NODES(self.connection, nodes=self, print_table=print_table)
 
     def modify_service_state(self, state, verbose=True):
         self.connection.modify_service(service=self, state=state, verbose=verbose)

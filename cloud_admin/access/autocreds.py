@@ -118,17 +118,16 @@ In [23]: creds.show()
 import errno
 import os.path
 import re
-from StringIO import StringIO
 import zipfile
 from ConfigParser import ConfigParser
 from urlparse import urlparse
+
+from cloud_admin.hosts.eucahost import EucaHost
+from cloud_admin.services.propertiesconnection import PropertiesConnection
+from cloud_admin.services.serviceconnection import ServiceConnection
 from cloud_utils.file_utils.eucarc import Eucarc
 from cloud_utils.log_utils import get_traceback
 from cloud_utils.system_utils.machine import Machine
-from cloud_admin.services.serviceconnection import ServiceConnection
-from cloud_utils.net_utils.sshconnection import CommandExitCodeException
-from cloud_admin.hosts.eucahost import EucaHost
-
 
 
 eucarc_to_service_map = {
@@ -206,6 +205,7 @@ class AutoCreds(Eucarc):
                  eucarc_obj=None,
                  existing_certs=None,
                  service_connection=None,
+                 properties_connection=None,
                  keysdir=None,
                  string=None,
                  clc_connect_kwargs=None):
@@ -213,6 +213,7 @@ class AutoCreds(Eucarc):
 
         super(AutoCreds, self).__init__(logger=logger, loglevel=log_level)
         self._serviceconnection = service_connection
+        self._propertiesconnection = properties_connection
         self._local_files = None
         self._https = https
         self._clc_ip = hostname
@@ -328,11 +329,11 @@ class AutoCreds(Eucarc):
     def domain(self):
         if self._domain is None:
             try:
-                if self.serviceconnection:
+                if self.propertiesconnection:
                     prop_name = 'system.dns.dnsdomain'
                     self.log.debug('Attempting to fetch service domain from property: {0}'
                                    .format(prop_name))
-                    domain_prop = self.serviceconnection.get_property(prop_name)
+                    domain_prop = self.propertiesconnection.get_property(prop_name)
                     self.log.debug('Got service domain: {0}'.format(domain_prop.value))
                     domain = domain_prop.value
                     if domain:
@@ -360,17 +361,17 @@ class AutoCreds(Eucarc):
 
     @property
     def service_port(self):
-        if not self._service_port and self.serviceconnection:
+        if not self._service_port and self.propertiesconnection:
             try:
                 prop_name = 'bootstrap.webservices.port'
                 self.log.debug('Attempting to fetch port from property:"{0}"'.format(prop_name))
-                port_prop = self.serviceconnection.get_property(prop_name)
+                port_prop = self.propertiesconnection.get_property(prop_name)
                 port = port_prop.value
                 if port:
                     self._service_port = port
             except Exception as E:
-                self.log.warning('{0}\nError fetching service port from service connection:{1}, '
-                                 'err:{2}'.format(get_traceback(), self.serviceconnection, E))
+                self.log.warning('{0}\nError fetching service port from properties connection:{1}, '
+                                 'err:{2}'.format(get_traceback(), self.propertiesconnection, E))
         return self._service_port
 
     @service_port.setter
@@ -408,14 +409,48 @@ class AutoCreds(Eucarc):
             self.log.debug("Can't create serviceconnection without clc_ip, access, and secret key")
         return self._serviceconnection
 
+    @property
+    def propertiesconnection(self):
+        if not self._propertiesconnection:
+            self._propertiesconnection = self._connect_properties()
+        return self._propertiesconnection
+
+    def _connect_properties(self):
+        if self._serviceconnection:
+            try:
+                self._propertiesconnection = \
+                    PropertiesConnection(hostname=self._serviceconnection.host,
+                                         aws_access_key=self._serviceconnection.aws_access_key_id,
+                                         aws_secret_key=self._serviceconnection.aws_secret_access_key)
+            except Exception as E:
+                self.log.error("{0}\nError creating Euca Properties Connection from serviceconnection:{1}"
+                               .format(get_traceback(), E))
+        elif self.aws_secret_key and self.aws_access_key and self._clc_ip:
+            try:
+                self._propertiesconnection = PropertiesConnection(hostname=self._clc_ip,
+                                                                  aws_access_key=self.aws_access_key,
+                                                                  aws_secret_key=self.aws_secret_key)
+            except Exception as E:
+                self.log.error("{0}\nError creating Euca Properties Connection:{1}"
+                               .format(get_traceback(), E))
+        else:
+            self.log.debug("Can't create propertiesconnection without clc_ip, access, and secret key")
+        return self._propertiesconnection
+
     def _close_adminpi(self):
         """
-        If open, Attempts to close/cleanup the AutoCred's serviceconnection obj
+        If open, Attempts to close/cleanup the AutoCred's serviceconnection and propertiesconnection objs
         """
         if self._serviceconnection:
             try:
                 self._serviceconnection.close()
                 self._serviceconnection = None
+            except:
+                pass
+        if self._propertiesconnection:
+            try:
+                self._propertiesconnection.close()
+                self._propertiesconnection = None
             except:
                 pass
 
@@ -438,7 +473,8 @@ class AutoCreds(Eucarc):
             path_dict = self._get_service_paths_from_service_host_urls(self.serviceconnection)
         else:
             path_dict = self._get_service_paths_from_serviceconnection(self.serviceconnection,
-                                                                   logger=self.log)
+                                                                       self.propertiesconnection,
+                                                                       logger=self.log)
         if not path_dict.get('ec2_access_key'):
             path_dict['ec2_access_key'] = self.aws_access_key
         if not path_dict.get('ec2_secret_key'):
@@ -481,7 +517,7 @@ class AutoCreds(Eucarc):
         return ret_dict
 
     @classmethod
-    def _get_service_paths_from_serviceconnection(cls, serviceconnection, try_domain=True,
+    def _get_service_paths_from_serviceconnection(cls, serviceconnection, propertiesconnection, try_domain=True,
                                                   secure=False, logger=None):
         """
         Reads the Eucalyptus services, maps them to common eucarc key values, and returns
@@ -489,20 +525,23 @@ class AutoCreds(Eucarc):
         :params serviceconnection: an ServiceConnection obj w/ active connection.
         :returns dict mapping eucarc common key-values to the discovered service URIs.
         """
-        if not isinstance(serviceconnection, ServiceConnection):
-            raise ValueError('Unknown type for service connection, got: "{0}/{1}"'
-                             .format(serviceconnection, type(serviceconnection)))
+        if not isinstance(propertiesconnection, PropertiesConnection):
+            raise ValueError('Unknown type for properties connection, got: "{0}/{1}"'
+                             .format(propertiesconnection, type(propertiesconnection)))
         if try_domain:
             try:
-                domain_prop = serviceconnection.get_property('system.dns.dnsdomain')
+                domain_prop = propertiesconnection.get_property('system.dns.dnsdomain')
                 domain = domain_prop.value
-                port_prop = serviceconnection.get_property('bootstrap.webservices.port')
+                port_prop = propertiesconnection.get_property('bootstrap.webservices.port')
                 port = port_prop.value
                 return cls._get_service_paths_from_domain(domain=domain, port=port, secure=secure)
             except Exception as DE:
                 if logger:
                     logger.warn('Could not fetch domain and port info from service '
                                 'connection, err: "{0}"'.format(DE))
+        if not isinstance(serviceconnection, ServiceConnection):
+            raise ValueError('Unknown type for service connection, got: "{0}/{1}"'
+                             .format(serviceconnection, type(serviceconnection)))
         return cls._get_service_paths_from_service_host_urls(serviceconnection)
 
     @classmethod
