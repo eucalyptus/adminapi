@@ -611,7 +611,7 @@ class SystemConnection(ServiceConnection):
                             if False will return the table object
         :param prop_names: property names used to filter query response
         """
-        return self.properties_connection.show_properties_narrow( *args, **kwargs )
+        return self.properties_connection.show_properties_narrow( *args, ** kwargs )
 
 
     def get_cloud_network_config_json(self, property_name='cloud.network.network_configuration'):
