@@ -288,11 +288,12 @@ class AutoCreds(Eucarc):
         :param update: update the service endpoints upon changes detected to the region or domain
         :return: None
         """
-        self.log.info('Updating with region:{0} and domain{1}'.format(region, domain))
+        self.log.info('Updating with region:{0} and domain:{1}'.format(region, domain))
         region = region or self.region or ""
         domain = domain or self.domain or ""
         region = region.strip()
         domain = domain.strip()
+        self.log.info('Now using region:{0} and domain:{1}'.format(region, domain))
         if region.endswith('amazonaws.com'):
             domain = 'amazonaws.com'
             region = region.rstrip(domain)
@@ -300,9 +301,14 @@ class AutoCreds(Eucarc):
             region = str(region).strip()
             if domain and region.endswith(domain):
                 region = region.rstrip(domain).strip('.')
-        if domain and domain:
-            region = region.rstrip(domain).strip('.')
-            domain = domain.lstrip(region).strip('.')
+        self.log.info('Now using region:{0} and domain:{1}'.format(region, domain))
+        if region and domain:
+            if region.endswith(domain):
+                region = region.rstrip(domain)
+                region = region.strip('.')
+            if domain.startswith(region):
+                domain = domain.lstrip(region)
+    	        domain = domain.strip('.')
         self._region = region
         self._domain = domain
         if not domain:
